@@ -38,7 +38,9 @@ RowLayout {
 
     Item { Layout.fillWidth: true }
 
+    // The explorer's settings live in the app's Settings tab now.
     ExIconButton {
+        visible: false
         source: Qt.resolvedUrl("../icons/settings.svg")
         text: "Settings"
         onClicked: root.settingsClicked()

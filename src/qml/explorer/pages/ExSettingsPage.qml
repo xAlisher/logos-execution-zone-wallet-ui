@@ -5,8 +5,10 @@ import Logos.Controls
 import Logos.Theme
 import "../components"
 
-Item {
+ColumnLayout {
     id: page
+
+    spacing: Theme.spacing.medium
 
     property var explorer
     readonly property var backend: explorer ? explorer.backend : null
@@ -37,184 +39,128 @@ Item {
         }
     }
 
+
+    ExFormField {
+        id: addrField
+        Layout.fillWidth: true
+        label: "Logos Blockchain node"
+        placeholder: "http://localhost:8080"
+        errorText: text.trim() === "" || /^https?:\/\/.+/.test(text.trim())
+                   ? "" : "Must start with http:// or https://"
+    }
+
+    ExFormField {
+        id: channelField
+        Layout.fillWidth: true
+        label: "Channel ID"
+        mono: true
+        placeholder: "64 hex characters"
+        errorText: text.trim() === "" || /^[0-9a-fA-F]{64}$/.test(text.trim())
+                   ? "" : "Must be exactly 64 hex characters"
+    }
+
+    ExFormField {
+        id: intervalField
+        // The v0.4 sequencer has no such option; kept only so the old bindings resolve.
+        visible: false
+        Layout.fillWidth: true
+        label: "Polling Interval"
+        placeholder: "1s"
+        errorText: text.trim() === "" || /^\d+(ms|s|m|h)$/.test(text.trim())
+                   ? "" : "Must look like 500ms, 1s, 2m or 1h"
+    }
+
     ColumnLayout {
-        anchors.fill: parent
-        spacing: Theme.spacing.medium
+        // Likewise not a v0.4 sequencer option.
+        visible: false
+        Layout.fillWidth: true
+        spacing: 0
 
-        ExSectionHeader { title: "Sequencer Settings" }
-
+        LogosCheckbox {
+            id: chainResetToggle
+            text: "Allow chain reset"
+        }
         LogosText {
             Layout.fillWidth: true
             wrapMode: Text.WordWrap
-            text: "The sequencer starts automatically with these settings. Change a field "
-                  + "and press Save to persist the config and restart the sequencer."
+            text: "Wipe the local index and re-sync when the channel serves a different chain."
+            color: Theme.palette.textMuted
+            font.pixelSize: Theme.typography.secondaryText
+        }
+    }
+
+    // Advanced ▸ raw JSON — escape hatch for auth / cross_zone /
+    // bridge_lock_holdings. Collapsed by default.
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: Theme.spacing.small
+
+        LogosText {
+            text: (page.advancedOpen ? "▾ " : "▸ ") + "Advanced: raw config JSON"
             color: Theme.palette.textSecondary
             font.pixelSize: Theme.typography.secondaryText
         }
+        TapHandler { onTapped: page.advancedOpen = !page.advancedOpen }
+    }
 
-        ExFormField {
-            id: addrField
-            Layout.fillWidth: true
-            label: "Logos Blockchain node"
-            placeholder: "http://localhost:8080"
-            errorText: text.trim() === "" || /^https?:\/\/.+/.test(text.trim())
-                       ? "" : "Must start with http:// or https://"
+    Rectangle {
+        visible: page.advancedOpen
+        Layout.fillWidth: true
+        Layout.preferredHeight: 240
+        radius: Theme.spacing.radiusLarge
+        color: Theme.palette.backgroundElevated
+        border.width: 1
+        border.color: editor.activeFocus ? Theme.palette.borderInteractive
+                                         : Theme.palette.borderSecondary
+        clip: true
+
+        TextArea {
+            id: editor
+            anchors.fill: parent
+            anchors.margins: Theme.spacing.medium
+            font.family: "Menlo, Monaco, Courier New, monospace"
+            font.pixelSize: Theme.typography.secondaryText
+            color: Theme.palette.text
+            wrapMode: TextArea.Wrap
+            background: Item {}
+            onTextChanged: if (!page.seedingEditor) page.jsonDirty = true
         }
+    }
 
-        ExFormField {
-            id: channelField
-            Layout.fillWidth: true
-            label: "Channel ID"
-            mono: true
-            placeholder: "64 hex characters"
-            errorText: text.trim() === "" || /^[0-9a-fA-F]{64}$/.test(text.trim())
-                       ? "" : "Must be exactly 64 hex characters"
+    // Actions right under the fields: save first, the destructive one last and apart.
+    RowLayout {
+        Layout.fillWidth: true
+        Layout.topMargin: Theme.spacing.small
+        spacing: Theme.spacing.small
+
+        LogosButton {
+            objectName: "lezExplorerSave"
+            variant: LogosButton.Variant.Primary
+            text: "Save & restart"
+            onClicked: page.save()
         }
-
-        ExFormField {
-            id: intervalField
-            // The v0.4 sequencer has no such option; kept only so the old bindings resolve.
-            visible: false
-            Layout.fillWidth: true
-            label: "Polling Interval"
-            placeholder: "1s"
-            errorText: text.trim() === "" || /^\d+(ms|s|m|h)$/.test(text.trim())
-                       ? "" : "Must look like 500ms, 1s, 2m or 1h"
+        LogosButton {
+            objectName: "lezExplorerReset"
+            text: "Reset to default"
+            onClicked: page.resetToDefault()
         }
-
-        ColumnLayout {
-            // Likewise not a v0.4 sequencer option.
-            visible: false
-            Layout.fillWidth: true
-            spacing: 0
-
-            LogosCheckbox {
-                id: chainResetToggle
-                text: "Allow chain reset"
-            }
-            LogosText {
-                Layout.fillWidth: true
-                wrapMode: Text.WordWrap
-                text: "Wipe the local index and re-sync when the channel serves a different chain."
-                color: Theme.palette.textMuted
-                font.pixelSize: Theme.typography.secondaryText
-            }
+        Item { Layout.fillWidth: true }
+        // Delete the sequencer's cache and re-sync (two-tap confirm).
+        LogosButton {
+            objectName: "lezExplorerDeleteCache"
+            text: page.confirmingReset ? "Confirm delete" : "Delete cache"
+            labelItem.color: Theme.palette.error
+            onClicked: page.resetCache()
         }
+    }
 
-        // Advanced ▸ raw JSON — escape hatch for auth / cross_zone /
-        // bridge_lock_holdings. Collapsed by default.
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: Theme.spacing.small
-
-            LogosText {
-                text: (page.advancedOpen ? "▾ " : "▸ ") + "Advanced: raw config JSON"
-                color: Theme.palette.textSecondary
-                font.pixelSize: Theme.typography.secondaryText
-            }
-            TapHandler { onTapped: page.advancedOpen = !page.advancedOpen }
-        }
-
-        Rectangle {
-            visible: page.advancedOpen
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            radius: Theme.spacing.radiusLarge
-            color: Theme.palette.backgroundElevated
-            border.width: 1
-            border.color: editor.activeFocus ? Theme.palette.borderInteractive
-                                             : Theme.palette.borderSecondary
-            clip: true
-
-            TextArea {
-                id: editor
-                anchors.fill: parent
-                anchors.margins: Theme.spacing.medium
-                font.family: "Menlo, Monaco, Courier New, monospace"
-                font.pixelSize: Theme.typography.secondaryText
-                color: Theme.palette.text
-                wrapMode: TextArea.Wrap
-                background: Item {}
-                onTextChanged: if (!page.seedingEditor) page.jsonDirty = true
-            }
-        }
-
-        // Filler so the buttons stay at the bottom while Advanced is collapsed.
-        Item {
-            visible: !page.advancedOpen
-            Layout.fillHeight: true
-        }
-
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: Theme.spacing.medium
-
-            LogosText {
-                id: statusLabel
-                Layout.fillWidth: true
-                wrapMode: Text.WordWrap
-                color: page.statusIsError ? Theme.palette.error : Theme.palette.success
-                font.pixelSize: Theme.typography.secondaryText
-            }
-
-            // Delete the sequencer's RocksDB cache and re-sync (two-tap confirm).
-            Rectangle {
-                Layout.preferredHeight: 38
-                Layout.preferredWidth: 150
-                radius: Theme.spacing.radiusMedium
-                color: resetCacheHover.hovered ? Qt.lighter(Theme.palette.error, 1.1) : Theme.palette.error
-
-                HoverHandler { id: resetCacheHover }
-                TapHandler { onTapped: page.resetCache() }
-
-                LogosText {
-                    anchors.centerIn: parent
-                    text: page.confirmingReset ? "Confirm delete" : "Delete Cache"
-                    color: Theme.palette.background
-                    font.pixelSize: Theme.typography.secondaryText
-                    font.weight: Theme.typography.weightBold
-                }
-            }
-
-            // Reset form + JSON to the built-in template.
-            Rectangle {
-                Layout.preferredHeight: 38
-                Layout.preferredWidth: 150
-                radius: Theme.spacing.radiusMedium
-                color: resetHover.hovered ? Theme.palette.backgroundSecondary : Theme.palette.backgroundElevated
-                border.width: 1
-                border.color: Theme.palette.borderSecondary
-
-                HoverHandler { id: resetHover }
-                TapHandler { onTapped: page.resetToDefault() }
-
-                LogosText {
-                    anchors.centerIn: parent
-                    text: "Reset to default"
-                    color: Theme.palette.textSecondary
-                    font.pixelSize: Theme.typography.secondaryText
-                }
-            }
-
-            // Save + (re)start.
-            Rectangle {
-                Layout.preferredHeight: 38
-                Layout.preferredWidth: 150
-                radius: Theme.spacing.radiusMedium
-                color: saveHover.hovered ? Qt.lighter(Theme.palette.primary, 1.1) : Theme.palette.primary
-
-                HoverHandler { id: saveHover }
-                TapHandler { onTapped: page.save() }
-
-                LogosText {
-                    anchors.centerIn: parent
-                    text: "Save & Start"
-                    color: Theme.palette.background
-                    font.pixelSize: Theme.typography.secondaryText
-                    font.weight: Theme.typography.weightBold
-                }
-            }
-        }
+    LogosText {
+        id: statusLabel
+        Layout.fillWidth: true
+        visible: text.length > 0
+        wrapMode: Text.WordWrap
+        color: page.statusIsError ? Theme.palette.error : Theme.palette.success
+        font.pixelSize: Theme.typography.secondaryText
     }
 
     function setStatus(message, isError) {

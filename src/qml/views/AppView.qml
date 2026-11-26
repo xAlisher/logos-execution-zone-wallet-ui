@@ -159,15 +159,27 @@ Item {
         }
 
         // ---- Settings ----
-        PageColumn {
+        // Full-width scroll with the 560 column centred, as Bridge.
+        LogosScrollView {
+            id: settingsScroll
             objectName: "lezPageSettings"
-            SettingsView {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                walletBackend: root.walletBackend
-                networkName: root.networkName
-                sequencerAddr: root.sequencerAddr
-                storagePath: root.storagePath
+            contentWidth: availableWidth
+            contentHeight: settingsColumn.implicitHeight + 2 * Theme.spacing.large
+
+            ColumnLayout {
+                id: settingsColumn
+                x: Math.round((settingsScroll.availableWidth - width) / 2)
+                y: Theme.spacing.large
+                width: Math.min(560, settingsScroll.availableWidth - 2 * Theme.spacing.xlarge)
+
+                SettingsView {
+                    Layout.fillWidth: true
+                    labelPixelSize: sendPanel.labelPixelSize
+                    walletBackend: root.walletBackend
+                    networkName: root.networkName
+                    sequencerAddr: root.sequencerAddr
+                    storagePath: root.storagePath
+                }
             }
         }
     }

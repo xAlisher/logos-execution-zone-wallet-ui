@@ -4,12 +4,13 @@ import QtQuick.Layouts
 import Logos.Theme
 import Logos.Controls
 
+import "../controls"
 import "../explorer"
 import "../explorer/pages"
 
-// Settings: the wallet's network and file (set when it was created, shown here so they can
-// be checked), and the Explorer's local sequencer config (what used to sit behind its gear).
-// A Lock button comes once lez_core can close a wallet.
+// Settings, in blocks as Send and Bridge are: the wallet's network and file (set when it was
+// created, shown so they can be checked), how to use another wallet or network, and the
+// Explorer's settings (which used to sit behind a gear inside the Explorer).
 ColumnLayout {
     id: root
 
@@ -17,74 +18,94 @@ ColumnLayout {
     property string networkName: ""
     property string sequencerAddr: ""
     property string storagePath: ""
+    property int labelPixelSize: Theme.typography.primaryText
 
     spacing: Theme.spacing.medium
 
-    LogosText {
-        text: qsTr("Settings")
-        color: Theme.palette.text
-        font.pixelSize: Theme.typography.titleText
-        font.weight: Theme.typography.weightBold
-    }
-
-    LogosFrame {
-        objectName: "lezSettingsWallet"
+    // A value to check or copy: in an input-like box, the middle elided when it's long.
+    component Value: Rectangle {
+        id: valueBox
+        property string value: ""
         Layout.fillWidth: true
-        contentItem: ColumnLayout {
-            spacing: Theme.spacing.small
-            LogosText {
-                text: qsTr("Wallet")
-                color: Theme.palette.text
-                font.weight: Theme.typography.weightBold
-            }
+        implicitHeight: 40
+        radius: Theme.spacing.radiusSmall
+        color: Theme.palette.backgroundInset
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: 12
+            anchors.rightMargin: 8
+            spacing: 6
             LogosText {
                 Layout.fillWidth: true
-                text: qsTr("Network: %1").arg(root.networkName.length ? root.networkName : qsTr("unknown"))
-                color: Theme.palette.textSecondary
+                elide: Text.ElideMiddle
+                text: valueBox.value.length > 0 ? valueBox.value : qsTr("Unknown")
+                color: valueBox.value.length > 0 ? Theme.palette.text : Theme.palette.textTertiary
+                font.family: Theme.typography.mono
                 font.pixelSize: Theme.typography.secondaryText
             }
-            LogosCopyableText {
-                Layout.fillWidth: true
-                text: root.sequencerAddr
-                copyText: root.sequencerAddr
-                showCopyButton: root.sequencerAddr.length > 0
-            }
-            LogosText {
-                Layout.fillWidth: true
-                Layout.topMargin: Theme.spacing.small
-                text: qsTr("File")
-                color: Theme.palette.textSecondary
-                font.pixelSize: Theme.typography.secondaryText
-            }
-            LogosCopyableText {
-                Layout.fillWidth: true
-                text: root.storagePath
-                copyText: root.storagePath
-                showCopyButton: root.storagePath.length > 0
-            }
-            LogosText {
-                Layout.fillWidth: true
-                wrapMode: Text.WordWrap
-                text: qsTr("The network is set when a wallet is created. To use another one, create "
-                           + "a wallet on it.")
-                color: Theme.palette.textTertiary
-                font.pixelSize: Theme.typography.secondaryText
+            LogosCopyButton {
+                visible: valueBox.value.length > 0
+                value: valueBox.value
             }
         }
     }
 
-    // The Explorer's own settings page, unchanged (it calls explorer.goHome() after a save). It
-    // reads its config once, as it is created: so only once the backend has one to give.
-    Loader {
-        objectName: "lezSettingsExplorer"
+    component Note: LogosText {
         Layout.fillWidth: true
-        Layout.fillHeight: true
-        Layout.topMargin: Theme.spacing.small
-        active: root.walletBackend !== null && root.walletBackend.explorerDefaultConfig.length > 0
-        sourceComponent: ExSettingsPage {
-            explorer: QtObject {
-                readonly property QtObject backend: ExplorerBackendAdapter { walletBackend: root.walletBackend }
-                function goHome() {}
+        wrapMode: Text.WordWrap
+        color: Theme.palette.textSecondary
+        font.pixelSize: Theme.typography.secondaryText
+    }
+
+    FieldBlock {
+        objectName: "lezSettingsNetwork"
+        label: root.networkName.length ? qsTr("Network: %1").arg(root.networkName) : qsTr("Network")
+        labelPixelSize: root.labelPixelSize
+        Note { text: qsTr("The sequencer this wallet talks to.") }
+        Value { value: root.sequencerAddr }
+    }
+
+    FieldBlock {
+        objectName: "lezSettingsFile"
+        label: qsTr("Wallet file")
+        labelPixelSize: root.labelPixelSize
+        Note { text: qsTr("Where this wallet is kept on this computer.") }
+        Value { value: root.storagePath }
+    }
+
+    // No button yet: the wallet core can't close an open wallet, so opening or creating
+    // another one from here would fail. Once it can, this becomes a button to the start screen.
+    FieldBlock {
+        objectName: "lezSettingsSwitch"
+        label: qsTr("Another wallet or network")
+        labelPixelSize: root.labelPixelSize
+        Note {
+            text: qsTr("A wallet stays open until you quit Basecamp. To use another wallet, or "
+                       + "a wallet on another network: quit Basecamp, open it again, open LEZ and "
+                       + "choose <b>Create new or unlock other wallet</b>.")
+            textFormat: Text.StyledText
+        }
+    }
+
+    // The Explorer's settings. The page reads its config once, as it is created: so only once
+    // the backend has one to give.
+    FieldBlock {
+        objectName: "lezSettingsExplorer"
+        label: qsTr("Explorer")
+        labelPixelSize: root.labelPixelSize
+        Note {
+            text: qsTr("The Explorer rebuilds LEZ blocks from a Logos Blockchain node and the LEZ "
+                       + "channel on it. It starts with these settings; Save restarts it.")
+        }
+        Loader {
+            Layout.fillWidth: true
+            Layout.topMargin: Theme.spacing.small
+            active: root.walletBackend !== null && root.walletBackend.explorerDefaultConfig.length > 0
+            sourceComponent: ExSettingsPage {
+                explorer: QtObject {
+                    readonly property QtObject backend: ExplorerBackendAdapter { walletBackend: root.walletBackend }
+                    function goHome() {}
+                }
             }
         }
     }
