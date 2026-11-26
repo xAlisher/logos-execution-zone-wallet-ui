@@ -6,6 +6,7 @@ import Logos.Theme
 import Logos.Controls
 import "views"
 import "popups"
+import "explorer"
 
 Rectangle {
     id: root
@@ -214,12 +215,113 @@ Rectangle {
         onDismissed: d.noticeMessage = ""
     }
 
+    // ---- The LEZ app's frame: title, network chip, Wallet / Explorer -------
+
+    // The network the open wallet talks to, by preset name.
+    function networkNameOf(addr) {
+        var a = String(addr || "").replace(/\/+$/, "")
+        if (!root.backend || a.length === 0) return ""
+        var presets = [[qsTr("Testnet"), root.backend.testnetUrl], [qsTr("Devnet"), root.backend.devnetUrl],
+                       [qsTr("Local"), root.backend.localhostUrl]]
+        for (var i = 0; i < presets.length; ++i)
+            if (String(presets[i][1] || "").replace(/\/+$/, "") === a) return presets[i][0]
+        return qsTr("Custom")
+    }
+    // The other tab, to a page: the Explorer opens on its first visit.
+    function showInExplorer(open) {
+        appTabs.currentIndex = 1
+        explorerLoader.active = true
+        Qt.callLater(function () { if (explorerLoader.item) open(explorerLoader.item) })
+    }
+
+    ColumnLayout {
+        id: frameHeader
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.leftMargin: Theme.spacing.xlarge
+        anchors.rightMargin: Theme.spacing.xlarge
+        anchors.topMargin: Theme.spacing.large
+        spacing: Theme.spacing.medium
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Theme.spacing.medium
+
+            LogosText {
+                objectName: "lezAppTitle"
+                text: qsTr("LEZ")
+                color: Theme.palette.text
+                font.pixelSize: Theme.typography.titleText
+                font.weight: Theme.typography.weightBold
+            }
+
+            Item { Layout.fillWidth: true }
+
+            // Name and sync state of the open wallet's network; its host in the tooltip.
+            Rectangle {
+                id: networkChip
+                objectName: "lezNetworkChip"
+                readonly property string name: root.networkNameOf(root.backend ? root.backend.sequencerAddr : "")
+                readonly property bool problem: root.backend !== null && root.backend.syncProblem.length > 0
+                readonly property bool syncing: root.backend !== null && root.backend.currentBlockHeight > 0
+                                                && root.backend.lastSyncedBlock < root.backend.currentBlockHeight
+                visible: d.isWalletOpen && name.length > 0
+                implicitHeight: 28
+                implicitWidth: chipText.implicitWidth + 2 * Theme.spacing.medium
+                radius: height / 2
+                color: "transparent"
+                border.width: 1
+                border.color: problem ? Theme.palette.warning : syncing ? Theme.palette.textSecondary
+                                                                        : Theme.palette.success
+                LogosText {
+                    id: chipText
+                    anchors.centerIn: parent
+                    text: networkChip.name + " · " + (networkChip.problem ? qsTr("Not syncing")
+                                                      : networkChip.syncing ? qsTr("Syncing")
+                                                      : qsTr("Synced"))
+                    font.pixelSize: Theme.typography.secondaryText
+                    color: networkChip.border.color
+                }
+                HoverHandler { id: chipHover }
+                ToolTip.visible: chipHover.hovered
+                ToolTip.text: (root.backend ? root.backend.sequencerAddr : "")
+                              + (root.backend && root.backend.syncProblem.length ? "\n" + root.backend.syncProblem : "")
+            }
+        }
+
+        LogosTabBar {
+            id: appTabs
+            objectName: "lezAppTabs"
+            Layout.fillWidth: true
+            currentIndex: 0
+            LogosTabButton { objectName: "lezWalletTab"; text: qsTr("Wallet") }
+            LogosTabButton { objectName: "lezExplorerTab"; text: qsTr("Explorer") }
+            onCurrentIndexChanged: if (currentIndex === 1) explorerLoader.active = true
+        }
+    }
+
+    // The Explorer tab: works with no wallet open; loaded on its first visit.
+    Loader {
+        id: explorerLoader
+        objectName: "lezExplorerLoader"
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: frameHeader.bottom
+        anchors.bottom: parent.bottom
+        visible: appTabs.currentIndex === 1
+        active: false
+        sourceComponent: ExplorerView { walletBackend: root.backend }
+    }
+
     StackView {
         id: stackView
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: parent.top
+        anchors.top: frameHeader.bottom
+        anchors.topMargin: Theme.spacing.small
         anchors.bottom: parent.bottom
+        visible: appTabs.currentIndex === 0
 
         Component {
             id: loadingView
@@ -328,6 +430,8 @@ Rectangle {
                 privateAccountModel: root.privateAccountModel
                 lastSyncedBlock: backend ? backend.lastSyncedBlock : 0
                 currentBlockHeight: backend ? backend.currentBlockHeight : 0
+                onViewTxInExplorerRequested: (txHash) => root.showInExplorer(function (ex) { ex.navigateTx(txHash) })
+                onViewAccountInExplorerRequested: (id) => root.showInExplorer(function (ex) { ex.navigateAccount(id) })
                 sequencerAddr: backend ? backend.sequencerAddr : ""
                 syncProblem: backend ? backend.syncProblem : ""
                 networkPresets: backend ? [{ name: "Devnet", url: backend.devnetUrl },

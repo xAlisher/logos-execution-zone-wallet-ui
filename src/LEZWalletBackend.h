@@ -7,6 +7,7 @@
 #include "rep_LEZWalletBackend_source.h"
 
 #include "LEZAccountFilterModel.h"
+#include "explorer/ExplorerService.h"
 #include "LEZWalletAccountModel.h"
 
 class LogosAPI;
@@ -54,12 +55,26 @@ public slots:
     bool checkLabelAvailable(QString label) override;
     QString addLabel(QString label, QString accountIdHex, bool isPublic) override;
 
+    // Explorer tab: forwarded to m_explorer.
+    bool explorerApplyConfigJson(QString json) override;
+    bool explorerResetSequencerCache() override;
+    void explorerRefreshBlocks() override;
+    void explorerLoadMoreBlocks() override;
+    QVariantMap explorerGetBlockById(QString id) override;
+    QVariantMap explorerGetBlockByHash(QString hash) override;
+    QVariantMap explorerGetTransaction(QString hash) override;
+    QVariantMap explorerGetAccount(QString accountId) override;
+    QVariantList explorerGetTransactionsByAccount(QString accountId, int offset, int limit) override;
+    QVariantMap explorerSearch(QString query) override;
+
 private slots:
     void syncNextChunk();
 
 private:
     void persistConfigPath(const QString& path);
     void persistStoragePath(const QString& path);
+    void forwardExplorerState();
+    ExplorerService* m_explorer = nullptr;
     void resolveStartup(int attempt);
     void lookForDefaultWallet();
     void clearSavedPaths();

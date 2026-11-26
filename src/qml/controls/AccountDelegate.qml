@@ -4,6 +4,7 @@ import QtQuick.Layouts
 
 import Logos.Theme
 import Logos.Controls
+import Logos.Icons
 import "../Base58.js" as Base58
 import "../Format.js" as Format
 import "../Units.js" as Units
@@ -17,6 +18,9 @@ ItemDelegate {
     // name is every label it carries joined — so a second save would append a
     // name rather than change the first.
     signal labelRequested(string accountId, bool isPublic)
+    // A public account, in the Explorer tab (Base58, as the explorer takes it). Private
+    // accounts aren't on chain in the clear, so there is nothing to show.
+    signal viewInExplorerRequested(string accountIdBase58)
 
     // No card: a rounded filled box per row read as a container inside a
     // container and squeezed the row's controls. Rows are separated by a rule
@@ -81,6 +85,19 @@ ItemDelegate {
             }
 
             Item { Layout.fillWidth: true }
+
+            LogosIconButton {
+                objectName: "lezViewAccountInExplorerButton"
+                flat: true
+                size: 28
+                iconSize: 16
+                iconSource: LogosIcons.search
+                iconColor: Theme.palette.textTertiary
+                visible: model.isPublic ?? false
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("View in explorer")
+                onClicked: root.viewInExplorerRequested(Base58.encode(model.accountId ?? ""))
+            }
 
             LogosIconButton {
                 objectName: "lezEditNameButton"

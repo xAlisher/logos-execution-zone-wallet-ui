@@ -26,6 +26,8 @@ Rectangle {
     signal transferShieldedOwnedRequested(string fromAccountId, string toAccountId, string amount)
     signal transferDeshieldedRequested(string fromAccountId, string toAccountId, string amount)
     signal bridgeWithdrawRequested(string fromAccountId, string bedrockAccountPkHex, string amount)
+    // The sent transaction, in the Explorer tab.
+    signal viewInExplorerRequested(string txHash)
 
     radius: Theme.spacing.radiusXlarge
     color: Theme.palette.backgroundSecondary
@@ -112,6 +114,13 @@ Rectangle {
                            : (root.transferResultIsError ? Theme.palette.error
                                                          : Theme.palette.textSecondary)
                 showCopyButton: root.transferResult.length > 0
+            }
+            LogosButton {
+                objectName: "lezViewTxInExplorerButton"
+                visible: !root.transferResultIsError && root.transferTxHash.length > 0
+                compact: true
+                text: qsTr("View in explorer")
+                onClicked: root.viewInExplorerRequested(root.transferTxHash)
             }
         }
     }

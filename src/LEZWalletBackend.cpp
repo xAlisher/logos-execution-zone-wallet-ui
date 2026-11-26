@@ -157,6 +157,13 @@ LEZWalletBackend::LEZWalletBackend(LogosAPI* logosAPI, QObject* parent)
     setIsStartupResolved(false);
     QTimer::singleShot(0, this, [this]() { resolveStartup(0); });
 
+    // The Explorer tab: works with no wallet open; owns the read-only sequencer.
+    m_explorer = new ExplorerService(m_logos, this);
+    connect(m_explorer, &ExplorerService::stateChanged, this, &LEZWalletBackend::forwardExplorerState);
+    connect(m_explorer, &ExplorerService::error, this, &LEZWalletBackend::explorerError);
+    forwardExplorerState();
+    QTimer::singleShot(0, this, [this]() { m_explorer->start(); });
+
     // Save wallet when app quits; host may not call destructors so this is best-effort.
     connect(qApp, &QCoreApplication::aboutToQuit, this,
             [this]() { saveWallet(); }, Qt::DirectConnection);
@@ -719,3 +726,29 @@ void LEZWalletBackend::lookForDefaultWallet()
     }
     setIsStartupResolved(true);
 }
+
+// ---- Explorer tab ----------------------------------------------------------
+
+void LEZWalletBackend::forwardExplorerState()
+{
+    setExplorerRecentBlocks(m_explorer->recentBlocks());
+    setExplorerChainHeight(m_explorer->chainHeight());
+    setExplorerConnectionStatus(m_explorer->connectionStatus());
+    setExplorerSyncStatus(m_explorer->syncStatus());
+    setExplorerConfigText(m_explorer->configText());
+    setExplorerDefaultConfig(m_explorer->defaultConfig());
+}
+
+bool LEZWalletBackend::explorerApplyConfigJson(QString json) { return m_explorer->applyConfigJson(json); }
+bool LEZWalletBackend::explorerResetSequencerCache() { return m_explorer->resetSequencerCache(); }
+void LEZWalletBackend::explorerRefreshBlocks() { m_explorer->refreshBlocks(); }
+void LEZWalletBackend::explorerLoadMoreBlocks() { m_explorer->loadMoreBlocks(); }
+QVariantMap LEZWalletBackend::explorerGetBlockById(QString id) { return m_explorer->getBlockById(id); }
+QVariantMap LEZWalletBackend::explorerGetBlockByHash(QString hash) { return m_explorer->getBlockByHash(hash); }
+QVariantMap LEZWalletBackend::explorerGetTransaction(QString hash) { return m_explorer->getTransaction(hash); }
+QVariantMap LEZWalletBackend::explorerGetAccount(QString accountId) { return m_explorer->getAccount(accountId); }
+QVariantList LEZWalletBackend::explorerGetTransactionsByAccount(QString accountId, int offset, int limit)
+{
+    return m_explorer->getTransactionsByAccount(accountId, offset, limit);
+}
+QVariantMap LEZWalletBackend::explorerSearch(QString query) { return m_explorer->search(query); }

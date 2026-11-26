@@ -1,0 +1,798 @@
+#include "ExplorerService.h"
+
+#include "sync_status.h"
+
+#include <algorithm>
+#include <utility>
+
+#include <QCoreApplication>
+#include <QDateTime>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
+#include <QJsonValue>
+#include <QRegularExpression>
+#include <QStandardPaths>
+#include <QTimeZone>
+#include <QTimer>
+
+// Generated umbrella: LogosModules (behind modules()) built from
+// metadata.json#dependencies — the Qt-typed wrappers for lez_core.
+#include "logos_sdk.h"
+
+namespace {
+
+    constexpr int kPollIntervalMs = 2000;
+    // The core module process can come up well after our onContextReady
+    // (tens of seconds), and a typed call made before it listens silently
+    // returns 0 — so the launch auto-start re-attempts on this many polls.
+    constexpr int kAutoStartRetries = 45;
+    // Above this gap we rebuild the feed from the backend rather than fetch every
+    // missing block one by one.
+    constexpr quint64 kGapRebuildThreshold = 8;
+
+    // Map the core FFI's FfiOperationError to a human message.
+    QString startErrorMessage(qlonglong code) {
+        switch (code) {
+        case 4: // FfiOperationError::SequencerInitializationError
+            return QStringLiteral(
+                "Sequencer failed to initialize: This is usually a "
+                "storage problem. The data directory is locked by another running "
+                "sequencer / isn't writable, or there is an invalid config field."
+                "It is also possible, that bedrock node address is unreachable."
+            );
+        case 1: // FfiOperationError::NullPointer
+            return QStringLiteral("Sequencer failed to start (NullPointer).");
+        default:
+            return QStringLiteral("Sequencer failed to start (FfiOperationError %1).").arg(code);
+        }
+    }
+
+    // Starter config shown in the Settings editor (and its "Reset to default").
+    // A working local-dev sequencer config; the user edits the fields (bedrock addr,
+    // channel id, initial accounts/commitments, signing key, ...) and saves.
+    // MUST tell user to add peers, or define them on release ourselves.
+    const char* const kDefaultConfig = R"JSON({
+    "max_num_tx_in_block": 100,
+    "mempool_max_size": 100,
+    "block_create_timeout": "1h",
+    "bedrock_config": {
+        "node_url": "http://localhost:8080",
+        "channel_id": "0101010101010101010101010101010101010101010101010101010101010101"
+    },
+    "gossip": {
+        "bootstrap_peers": []
+    }
+})JSON";
+
+    // 64/128-bit values arrive as decimal strings (to dodge JSON double precision
+    // loss), but be lenient and also accept a JSON number.
+    quint64 jsonU64(const QJsonValue& value) {
+        if (value.isString()) {
+            bool ok = false;
+            const qulonglong parsed = value.toString().toULongLong(&ok);
+            return ok ? parsed : 0;
+        }
+        if (value.isDouble()) {
+            const double number = value.toDouble();
+            return number > 0.0 ? static_cast<quint64>(number) : 0;
+        }
+        return 0;
+    }
+
+    QString jsonStr(const QJsonValue& value) {
+        if (value.isString()) {
+            return value.toString();
+        }
+        if (value.isDouble()) {
+            return QString::number(static_cast<qulonglong>(value.toDouble()));
+        }
+        return {};
+    }
+
+    // Account ids are Base58 (matching the wallet UI and canonical LEZ); block/tx
+    // hashes are hex. These mirror the sequencer module's codec so the explorer can
+    // recognise an account-shaped query and always display the canonical Base58
+    // form.
+    const char* const kBase58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+    int base58Index(char c) {
+        for (int i = 0; i < 58; ++i) {
+            if (kBase58Alphabet[i] == c) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    // Decode a Base58 string (plain Bitcoin alphabet, no checksum) into raw bytes.
+    // Returns false on any non-Base58 character. Leading '1's map to leading zeros.
+    bool base58Decode(const QString& s, QByteArray& out) {
+        const QString t = s.trimmed();
+        if (t.isEmpty()) {
+            return false;
+        }
+        int leadingZeros = 0;
+        for (int i = 0; i < t.size() && t.at(i) == QLatin1Char('1'); ++i) {
+            ++leadingZeros;
+        }
+        QByteArray digits; // base-256, least-significant first
+        for (const QChar qc : t) {
+            const int idx = qc.unicode() < 128 ? base58Index(static_cast<char>(qc.unicode())) : -1;
+            if (idx < 0) {
+                return false;
+            }
+            int carry = idx;
+            for (int j = 0; j < digits.size(); ++j) {
+                carry += static_cast<unsigned char>(digits[j]) * 58;
+                digits[j] = static_cast<char>(carry & 0xFF);
+                carry >>= 8;
+            }
+            while (carry > 0) {
+                digits.append(static_cast<char>(carry & 0xFF));
+                carry >>= 8;
+            }
+        }
+        out = QByteArray(leadingZeros, '\0');
+        for (int i = digits.size(); i-- > 0;) {
+            out.append(digits[i]);
+        }
+        return true;
+    }
+
+    // The account id if `query` is one, else "". Accounts are Base58 with a 32-byte
+    // payload — a 64-hex string is a block/tx hash, not an account (matches the web
+    // explorer's AccountId::from_str, which is Base58-only with no hex fallback).
+    QString accountIdOrEmpty(const QString& query) {
+        const QString trimmed = query.trimmed();
+        QByteArray decoded;
+        if (base58Decode(trimmed, decoded) && decoded.size() == 32) {
+            return trimmed;
+        }
+        return {};
+    }
+
+    QString timestampText(quint64 timestamp) {
+        QDateTime dt;
+        // Tolerate either seconds or milliseconds since epoch.
+        if (timestamp > 1000000000000ULL) {
+            dt = QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(timestamp), QTimeZone::UTC);
+        } else {
+            dt = QDateTime::fromSecsSinceEpoch(static_cast<qint64>(timestamp), QTimeZone::UTC);
+        }
+        if (!dt.isValid()) {
+            dt = QDateTime::currentDateTimeUtc();
+        }
+        return dt.toString(QStringLiteral("yyyy-MM-dd hh:mm:ss")) + QStringLiteral(" UTC");
+    }
+
+    QVariantMap txObjectToMap(const QJsonObject& obj) {
+        QVariantMap tx;
+        if (obj.isEmpty()) {
+            return tx;
+        }
+
+        tx.insert(QStringLiteral("hash"), jsonStr(obj.value(QStringLiteral("hash"))));
+        const QString type = obj.value(QStringLiteral("type")).toString();
+        tx.insert(QStringLiteral("type"), type);
+
+        const auto accountsOf = [](const QJsonArray& arr) {
+            QVariantList accounts;
+            for (const auto& entry : arr) {
+                const QJsonObject account = entry.toObject();
+                QVariantMap ref;
+                ref.insert(QStringLiteral("accountId"), jsonStr(account.value(QStringLiteral("account_id"))));
+                // The program whose actor state the transaction touches on this account.
+                const QString programAccountId = jsonStr(account.value(QStringLiteral("program_account_id")));
+                if (!programAccountId.isEmpty()) {
+                    ref.insert(QStringLiteral("programAccountId"), programAccountId);
+                }
+                // Only accounts whose nonce the transaction bumps carry one.
+                const QString nonce = jsonStr(account.value(QStringLiteral("nonce")));
+                if (!nonce.isEmpty()) {
+                    ref.insert(QStringLiteral("nonce"), nonce);
+                }
+                accounts.append(ref);
+            }
+            return accounts;
+        };
+
+        if (type == QLatin1String("Public")) {
+            tx.insert(QStringLiteral("programAccountId"), jsonStr(obj.value(QStringLiteral("program_account_id"))));
+            tx.insert(QStringLiteral("accounts"), accountsOf(obj.value(QStringLiteral("accounts")).toArray()));
+            tx.insert(QStringLiteral("message"), jsonStr(obj.value(QStringLiteral("message"))));
+            tx.insert(QStringLiteral("signatureCount"), obj.value(QStringLiteral("signature_count")).toInt());
+            // Declared fee caps (null for fee-exempt/system txs); omitted when absent.
+            const QJsonValue feeValue = obj.value(QStringLiteral("fee"));
+            if (feeValue.isObject()) {
+                const QJsonObject feeObj = feeValue.toObject();
+                QVariantMap fee;
+                fee.insert(QStringLiteral("payer"), jsonStr(feeObj.value(QStringLiteral("payer"))));
+                fee.insert(QStringLiteral("gasLimit"), jsonStr(feeObj.value(QStringLiteral("gas_limit"))));
+                fee.insert(QStringLiteral("tip"), jsonStr(feeObj.value(QStringLiteral("tip"))));
+                fee.insert(QStringLiteral("maxFee"), jsonStr(feeObj.value(QStringLiteral("max_fee"))));
+                tx.insert(QStringLiteral("fee"), fee);
+            }
+        } else if (type == QLatin1String("PrivacyPreserving")) {
+            tx.insert(QStringLiteral("accounts"), accountsOf(obj.value(QStringLiteral("accounts")).toArray()));
+            // One private action = nullifier + root + commitment + encrypted
+            // post-state, so a single count replaced the former per-list ones.
+            tx.insert(
+                QStringLiteral("privateActionsCount"), obj.value(QStringLiteral("private_actions_count")).toInt()
+            );
+            tx.insert(
+                QStringLiteral("validityWindowStart"),
+                static_cast<qlonglong>(jsonU64(obj.value(QStringLiteral("validity_window_start"))))
+            );
+            tx.insert(
+                QStringLiteral("validityWindowEnd"),
+                static_cast<qlonglong>(jsonU64(obj.value(QStringLiteral("validity_window_end"))))
+            );
+            tx.insert(QStringLiteral("signatureCount"), obj.value(QStringLiteral("signature_count")).toInt());
+            tx.insert(QStringLiteral("proofSizeBytes"), obj.value(QStringLiteral("proof_size")).toInt());
+            // The fee is paid inside the proof; only its refund target is public.
+            const QJsonValue feeValue = obj.value(QStringLiteral("fee"));
+            if (feeValue.isObject()) {
+                const QJsonObject feeObj = feeValue.toObject();
+                QVariantMap fee;
+                fee.insert(QStringLiteral("refundTo"), jsonStr(feeObj.value(QStringLiteral("refund_to"))));
+                fee.insert(QStringLiteral("hasFallback"), feeObj.value(QStringLiteral("has_fallback")).toBool());
+                tx.insert(QStringLiteral("fee"), fee);
+            }
+        }
+
+        return tx;
+    }
+
+    QVariantMap blockObjectToMap(const QJsonObject& obj) {
+        QVariantMap block;
+        if (obj.isEmpty()) {
+            return block;
+        }
+
+        block.insert(QStringLiteral("blockId"), static_cast<qlonglong>(jsonU64(obj.value(QStringLiteral("block_id")))));
+        block.insert(QStringLiteral("hash"), jsonStr(obj.value(QStringLiteral("hash"))));
+        block.insert(QStringLiteral("prevBlockHash"), jsonStr(obj.value(QStringLiteral("prev_block_hash"))));
+        block.insert(QStringLiteral("timestampText"), timestampText(jsonU64(obj.value(QStringLiteral("timestamp")))));
+
+        const QString status = obj.value(QStringLiteral("bedrock_status")).toString(QStringLiteral("Pending"));
+        block.insert(QStringLiteral("status"), status);
+
+        const QJsonArray txArray = obj.value(QStringLiteral("transactions")).toArray();
+        QVariantList transactions;
+        transactions.reserve(txArray.size());
+        for (const auto& txValue : txArray) {
+            const QVariantMap tx = txObjectToMap(txValue.toObject());
+            if (!tx.isEmpty()) {
+                transactions.append(tx);
+            }
+        }
+        block.insert(QStringLiteral("transactions"), transactions);
+        block.insert(QStringLiteral("txCount"), transactions.size());
+
+        return block;
+    }
+
+    QVariantMap blockJsonToMap(const QString& json) {
+        if (json.isEmpty()) {
+            return {};
+        }
+        const QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8());
+        return doc.isObject() ? blockObjectToMap(doc.object()) : QVariantMap();
+    }
+
+    QVariantMap accountJsonToMap(const QString& accountId, const QString& json) {
+        if (json.isEmpty()) {
+            return {};
+        }
+        const QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8());
+        if (!doc.isObject()) {
+            return {};
+        }
+        const QJsonObject obj = doc.object();
+
+        QVariantMap account;
+        account.insert(QStringLiteral("accountId"),
+                       accountId); // payload omits it; inject the queried id
+        // Native balance; null means the native actor state holds an invalid encoding.
+        const QJsonValue balanceValue = obj.value(QStringLiteral("balance"));
+        const bool balanceValid = !balanceValue.isNull();
+        account.insert(QStringLiteral("balanceValid"), balanceValid);
+        if (balanceValid) {
+            QString balance = jsonStr(balanceValue);
+            account.insert(QStringLiteral("balance"), balance.isEmpty() ? QStringLiteral("0") : balance);
+        }
+        QString nonce = jsonStr(obj.value(QStringLiteral("nonce")));
+        account.insert(QStringLiteral("nonce"), nonce.isEmpty() ? QStringLiteral("0") : nonce);
+
+        // Per-program actor states, keyed by the owning program's account id.
+        QVariantList actorStates;
+        for (const auto& entry : obj.value(QStringLiteral("actor_states")).toArray()) {
+            const QJsonObject stateObj = entry.toObject();
+            QVariantMap state;
+            state.insert(
+                QStringLiteral("programAccountId"), jsonStr(stateObj.value(QStringLiteral("program_account_id")))
+            );
+            state.insert(QStringLiteral("dataSizeBytes"), stateObj.value(QStringLiteral("data_size")).toInt());
+            actorStates.append(state);
+        }
+        account.insert(QStringLiteral("actorStates"), actorStates);
+        return account;
+    }
+
+    QVariantMap txJsonToMap(const QString& json) {
+        if (json.isEmpty()) {
+            return {};
+        }
+        const QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8());
+        return doc.isObject() ? txObjectToMap(doc.object()) : QVariantMap();
+    }
+
+} // namespace
+
+ExplorerService::ExplorerService(LogosModules* modules, QObject* parent)
+    : QObject(parent), m_modules(modules) {
+    setDefaultConfig(QString::fromUtf8(kDefaultConfig));
+}
+
+ExplorerService::~ExplorerService() {
+    // Defensive: ensure no poll fires while the backend is being torn down.
+    if (m_pollTimer) {
+        m_pollTimer->stop();
+    }
+}
+
+void ExplorerService::start() {
+    setConnectionStatus(QStringLiteral("Connecting"));
+
+    // Reload the previously-saved config — or, on first launch, seed the
+    // built-in default so the sequencer starts without a Settings visit — and
+    // auto-start (set-once UX).
+    QString saved = readConfigFile();
+    if (saved.trimmed().isEmpty() && writeConfigFile(defaultConfig())) {
+        saved = defaultConfig();
+    }
+    if (!saved.trimmed().isEmpty()) {
+        setConfigText(saved);
+        // This first attempt races the core module's own startup: the call
+        // no-ops (returns 0) if the module isn't listening yet. pollTip keeps
+        // retrying while the status stays silent.
+        m_autoStartRetriesLeft = kAutoStartRetries;
+        startSequencerFromFile();
+    }
+
+    // The core pushes no events — poll the tip for live head updates.
+    m_pollTimer = new QTimer(this);
+    m_pollTimer->setInterval(kPollIntervalMs);
+    connect(m_pollTimer, &QTimer::timeout, this, &ExplorerService::pollTip);
+    m_pollTimer->start();
+
+    // pollTip() makes a synchronous cross-process call into lez_core.
+    // On shutdown the host SIGTERMs that dependency and only waits ~3s before
+    // SIGKILL, while our IPC timeout is ~20s — so a poll landing mid-teardown
+    // blocks on a dead peer and freezes the window. Stop polling the instant the
+    // app starts quitting to close that window from our side.
+    connect(qApp, &QCoreApplication::aboutToQuit, this, [this]() {
+        if (m_pollTimer) {
+            m_pollTimer->stop();
+        }
+    });
+
+    // Kick an immediate poll so the view fills without waiting a full interval.
+    pollTip();
+}
+
+bool ExplorerService::applyConfigJson(QString json) {
+    const QString trimmed = json.trimmed();
+    if (trimmed.isEmpty()) {
+        emit error(QStringLiteral("Config is empty."));
+        return false;
+    }
+    // Reject invalid JSON up front so we never start the sequencer from garbage.
+    QJsonParseError parseError;
+    QJsonDocument::fromJson(trimmed.toUtf8(), &parseError);
+    if (parseError.error != QJsonParseError::NoError) {
+        emit error(QStringLiteral("Invalid JSON: %1").arg(parseError.errorString()));
+        return false;
+    }
+
+    if (!writeConfigFile(json)) {
+        emit error(QStringLiteral("Could not write config to %1").arg(configFilePath()));
+        return false;
+    }
+    setConfigText(json);
+
+    const bool ok = startSequencerFromFile();
+
+    // Re-baseline the poller; a (re)started sequencer may ingest afresh — and the
+    // edit may have pointed it at a different channel, whose store is separate
+    // and possibly empty.
+    resetPollBaseline();
+    refreshBlocks();
+    return ok;
+}
+
+bool ExplorerService::resetSequencerCache() {
+    // A saved config is required: reset_storage reads the channel from it, and we
+    // restart from it afterwards. Without one there's nothing to reset against, so
+    // don't wipe-then-fail-to-restart.
+    if (readConfigFile().trimmed().isEmpty()) {
+        emit error(QStringLiteral("Save a sequencer config before deleting the cache."));
+        return false;
+    }
+
+    // reset_storage stops the sequencer and deletes its RocksDB store; then we
+    // restart from the saved config so it re-indexes the current chain from
+    // scratch. The recovery path for a store left stale against a reset chain.
+    const qlonglong code = m_modules->lez_core.reset_storage(configFilePath(), false);
+    if (code != 0) {
+        emit error(QStringLiteral("Failed to delete the sequencer cache (code %1).").arg(code));
+        return false;
+    }
+
+    // Store is empty now; re-baseline the poller and restart ingestion.
+    resetPollBaseline();
+    const bool ok = startSequencerFromFile();
+    refreshBlocks();
+    return ok;
+}
+
+void ExplorerService::refreshBlocks() {
+    const QString json = m_modules->lez_core.getBlocks(QString(), QStringLiteral("10"));
+    m_recentBlocks = parseBlockArrayJson(json);
+
+    m_newestLoadedId = 0;
+    m_oldestLoadedId = 0;
+    for (const QVariant& entry : std::as_const(m_recentBlocks)) {
+        const quint64 id = entry.toMap().value(QStringLiteral("blockId")).toULongLong();
+        if (m_newestLoadedId == 0 || id > m_newestLoadedId) {
+            m_newestLoadedId = id;
+        }
+        if (m_oldestLoadedId == 0 || id < m_oldestLoadedId) {
+            m_oldestLoadedId = id;
+        }
+    }
+    setRecentBlocks(m_recentBlocks);
+}
+
+void ExplorerService::loadMoreBlocks() {
+    if (m_oldestLoadedId <= 1) {
+        return; // already at genesis
+    }
+    const QString json =
+        m_modules->lez_core.getBlocks(QString::number(m_oldestLoadedId), QStringLiteral("10"));
+    const QVariantList older = parseBlockArrayJson(json);
+    if (older.isEmpty()) {
+        return;
+    }
+
+    m_recentBlocks.append(older);
+    for (const QVariant& entry : older) {
+        const quint64 id = entry.toMap().value(QStringLiteral("blockId")).toULongLong();
+        if (id != 0 && (m_oldestLoadedId == 0 || id < m_oldestLoadedId)) {
+            m_oldestLoadedId = id;
+        }
+    }
+    setRecentBlocks(m_recentBlocks);
+}
+
+QVariantMap ExplorerService::getBlockById(QString id) {
+    return blockJsonToMap(m_modules->lez_core.getBlockById(id));
+}
+
+QVariantMap ExplorerService::getBlockByHash(QString hash) {
+    return blockJsonToMap(m_modules->lez_core.getBlockByHash(hash));
+}
+
+QVariantMap ExplorerService::getTransaction(QString hash) {
+    return txJsonToMap(m_modules->lez_core.getTransaction(hash));
+}
+
+QVariantMap ExplorerService::getAccount(QString accountId) {
+    return accountJsonToMap(accountId, m_modules->lez_core.getAccount(accountId));
+}
+
+QVariantList ExplorerService::getTransactionsByAccount(QString accountId, int offset, int limit) {
+    const QString json = m_modules->lez_core.getTransactionsByAccount(
+        accountId, QString::number(offset), QString::number(limit)
+    );
+    if (json.isEmpty()) {
+        return {};
+    }
+    const QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8());
+    if (!doc.isArray()) {
+        return {};
+    }
+
+    QVariantList result;
+    const QJsonArray array = doc.array();
+    result.reserve(array.size());
+    for (const auto& item : array) {
+        const QVariantMap tx = txObjectToMap(item.toObject());
+        if (!tx.isEmpty()) {
+            result.append(tx);
+        }
+    }
+    return result;
+}
+
+QVariantMap ExplorerService::search(QString query) {
+    QVariantList blocks;
+    QVariantList transactions;
+    QVariantList accounts;
+
+    const QString trimmed = query.trimmed();
+    if (!trimmed.isEmpty()) {
+        static const QRegularExpression hashRegex(QStringLiteral("^[0-9a-fA-F]{64}$"));
+        if (hashRegex.match(trimmed).hasMatch()) {
+            const QVariantMap block = getBlockByHash(trimmed);
+            if (!block.isEmpty()) {
+                blocks.append(block);
+            }
+            const QVariantMap tx = getTransaction(trimmed);
+            if (!tx.isEmpty()) {
+                transactions.append(tx);
+            }
+        }
+
+        // Account ids are Base58 only (a hex string is a block/tx hash, not an
+        // account). getAccount injects the id, so a payload with only that one
+        // field means "not found".
+        const QString accountId = accountIdOrEmpty(trimmed);
+        if (!accountId.isEmpty()) {
+            const QVariantMap account = getAccount(accountId);
+            if (account.size() > 1) {
+                accounts.append(account);
+            }
+        }
+
+        bool ok = false;
+        const quint64 blockId = trimmed.toULongLong(&ok);
+        if (ok) {
+            const QVariantMap block = getBlockById(QString::number(blockId));
+            if (!block.isEmpty()) {
+                const bool duplicate = std::any_of(blocks.cbegin(), blocks.cend(), [blockId](const QVariant& e) {
+                    return e.toMap().value(QStringLiteral("blockId")).toULongLong() == blockId;
+                });
+                if (!duplicate) {
+                    blocks.append(block);
+                }
+            }
+        }
+    }
+
+    QVariantMap results;
+    results.insert(QStringLiteral("blocks"), blocks);
+    results.insert(QStringLiteral("transactions"), transactions);
+    results.insert(QStringLiteral("accounts"), accounts);
+    return results;
+}
+
+quint64 ExplorerService::applySyncStatus(const QString& json) {
+    // TODO: Replace with normal parsing when [955](https://github.com/logos-blockchain/logos-execution-zone/pull/955) merged in LEZ.
+    const SyncStatus parsed = parseSyncStatusFromLatestBlockId(json);
+
+    // A failed start leaves getStatus empty => "Stopped", which would lose the
+    // reason — carry the remembered start error into the banner's status.
+    QString errorMsg = parsed.error;
+    if (parsed.state == QLatin1String("Stopped") && !m_lastStartError.isEmpty()) {
+        errorMsg = m_lastStartError;
+    }
+
+    // While the launch auto-start is still retrying against a booting module,
+    // an empty status is expected — present it as booting, not "not running".
+    QString shownState = parsed.state;
+    if (parsed.state == QLatin1String("Stopped") && m_autoStartRetriesLeft > 0 && errorMsg.isEmpty()) {
+        shownState = QStringLiteral("Starting");
+    }
+
+    QVariantMap status;
+    status.insert(QStringLiteral("state"), shownState);
+    status.insert(QStringLiteral("blockId"), static_cast<qulonglong>(parsed.blockId));
+    status.insert(QStringLiteral("error"), errorMsg);
+    setSyncStatus(status);
+
+    // Keep the legacy health indicator in step with the richer status. Stalled
+    // means ingestion is parked on a bad block — unhealthy, even though the L1
+    // connection itself is fine.
+    if (parsed.state == QLatin1String("Error") || parsed.state == QLatin1String("Stalled")) {
+        setConnectionStatus(QStringLiteral("Error"));
+    } else if (parsed.state == QLatin1String("Syncing") || parsed.state == QLatin1String("CaughtUp")) {
+        setConnectionStatus(QStringLiteral("Connected"));
+    } else {
+        setConnectionStatus(QStringLiteral("Connecting"));
+    }
+
+    return parsed.blockId;
+}
+
+void ExplorerService::pollTip() {
+    // One status call drives both the sync banner and the feed: indexedBlockId
+    // is the L2 tip we page from.
+    // TODO: Replace with normal status after [955](https://github.com/logos-blockchain/logos-execution-zone/pull/955) merged in LEZ.
+    const QString statusJson = m_modules->lez_core.getLastFinalizedBlockId();
+    const quint64 tip = applySyncStatus(statusJson);
+
+    // Launch auto-start retry: an empty status means no sequencer is running —
+    // either the module was still booting when onContextReady's start call
+    // fired (the typed call silently no-ops then) or the start failed. Retry
+    // until the module answers; a real module-side failure (non-zero start
+    // code) already put its reason on the banner, so stop retrying then.
+    if (m_autoStartRetriesLeft > 0) {
+        if (!statusJson.isEmpty()) {
+            m_autoStartRetriesLeft = 0;
+        } else if (--m_autoStartRetriesLeft > 0 && !startSequencerFromFile()) {
+            m_autoStartRetriesLeft = 0;
+        }
+    }
+    // Publish the tip on every poll, including 0. The sequencer namespaces its
+    // store per channel, so pointing it at a different channel reports "nothing
+    // indexed" — keeping the previous channel's height published would leave the
+    // banner claiming a block the sequencer no longer has.
+    setChainHeight(static_cast<qlonglong>(tip));
+
+    if (tip == 0) {
+        // No finalized block yet (starting / syncing from genesis, or stopped);
+        // syncStatus already conveys which. Drop any feed left over from the
+        // chain we were indexing before, so the list agrees with the height we
+        // just published, and re-baseline so the next block refills it.
+        if (m_polledOnce || !m_recentBlocks.isEmpty()) {
+            m_lastPolledTip = 0;
+            m_polledOnce = false;
+            clearBlockFeed();
+        }
+        return;
+    }
+
+    // First successful poll: fill the feed and baseline without double-loading.
+    if (!m_polledOnce) {
+        m_polledOnce = true;
+        m_lastPolledTip = tip;
+        refreshBlocks();
+        return;
+    }
+
+    if (tip == m_lastPolledTip) {
+        return;
+    }
+
+    // Tip moved backwards: the store was wiped and re-indexed under us (chain
+    // reset, or a restart onto another channel that we didn't drive). Rebuild
+    // rather than wait for the new chain to grow past the old tip, which would
+    // leave the feed showing blocks that no longer exist.
+    if (tip < m_lastPolledTip) {
+        m_lastPolledTip = tip;
+        refreshBlocks();
+        return;
+    }
+
+    // Large jump / gap: rebuild the recent list from the backend.
+    if (tip - m_lastPolledTip > kGapRebuildThreshold) {
+        m_lastPolledTip = tip;
+        refreshBlocks();
+        return;
+    }
+
+    // Contiguous growth: fetch the new heads and prepend (newest first).
+    for (quint64 id = m_lastPolledTip + 1; id <= tip; ++id) {
+        const QVariantMap block = fetchBlock(id);
+        if (!block.isEmpty()) {
+            m_recentBlocks.prepend(block);
+            if (id > m_newestLoadedId) {
+                m_newestLoadedId = id;
+            }
+            if (m_oldestLoadedId == 0) {
+                m_oldestLoadedId = id;
+            }
+        }
+    }
+    m_lastPolledTip = tip;
+    setRecentBlocks(m_recentBlocks);
+}
+
+void ExplorerService::resetPollBaseline() {
+    m_lastPolledTip = 0;
+    m_polledOnce = false;
+    // The height is published, so it must be dropped here too — otherwise the
+    // previous chain's tip stays on the banner until (and unless) a poll on the
+    // new chain overwrites it.
+    setChainHeight(0);
+}
+
+void ExplorerService::clearBlockFeed() {
+    m_recentBlocks.clear();
+    m_newestLoadedId = 0;
+    m_oldestLoadedId = 0;
+    setRecentBlocks(m_recentBlocks);
+}
+
+QVariantMap ExplorerService::fetchBlock(quint64 blockId) {
+    return blockJsonToMap(m_modules->lez_core.getBlockById(QString::number(blockId)));
+}
+
+QVariantList ExplorerService::parseBlockArrayJson(const QString& json) const {
+    if (json.isEmpty()) {
+        return {};
+    }
+    const QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8());
+    if (!doc.isArray()) {
+        return {};
+    }
+
+    QVariantList blocks;
+    const QJsonArray array = doc.array();
+    blocks.reserve(array.size());
+    for (const auto& item : array) {
+        const QVariantMap block = blockObjectToMap(item.toObject());
+        if (!block.isEmpty()) {
+            blocks.append(block);
+        }
+    }
+    return blocks;
+}
+
+namespace {
+    // The writable path where the edited config JSON is persisted and the sequencer
+    // is started from (so the UI never deals with paths). Same logic, shared by the
+    // const and non-const accessors.
+    QString resolveConfigFilePath() {
+        QString dir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+        if (dir.isEmpty()) {
+            dir = QDir::tempPath();
+        }
+        return QDir(dir).filePath(QStringLiteral("sequencer_config.json"));
+    }
+} // namespace
+
+QString ExplorerService::configFilePath() {
+    if (m_configFilePath.isEmpty()) {
+        m_configFilePath = resolveConfigFilePath();
+    }
+    return m_configFilePath;
+}
+
+bool ExplorerService::writeConfigFile(const QString& json) {
+    const QString path = configFilePath();
+    const QDir dir = QFileInfo(path).dir();
+    if (!dir.exists() && !dir.mkpath(QStringLiteral("."))) {
+        return false;
+    }
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+        return false;
+    }
+    const QByteArray bytes = json.toUtf8();
+    const bool ok = file.write(bytes) == bytes.size();
+    file.close();
+    return ok;
+}
+
+QString ExplorerService::readConfigFile() const {
+    QFile file(m_configFilePath.isEmpty() ? resolveConfigFilePath() : m_configFilePath);
+    if (!file.exists() || !file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return {};
+    }
+    const QString content = QString::fromUtf8(file.readAll());
+    file.close();
+    return content;
+}
+
+bool ExplorerService::startSequencerFromFile() {
+    // stops the sequencer if it's already running, then starts it with the config
+    // file path.
+    //
+    // this has the effect of "restarting" the sequencer with the new config.
+    m_modules->lez_core.stop_sequencer();
+    const qlonglong code = m_modules->lez_core.start_sequencer(configFilePath());
+    if (code != 0) {
+        m_lastStartError = startErrorMessage(code);
+        emit error(m_lastStartError);
+        return false;
+    }
+    m_lastStartError.clear();
+    return true;
+}

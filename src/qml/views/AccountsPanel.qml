@@ -57,6 +57,7 @@ Rectangle {
     signal createPrivateAccountRequested()
     signal fetchBalancesRequested()
     signal labelRequested(string accountId, bool isPublic)
+    signal viewAccountInExplorerRequested(string accountIdBase58)
 
     radius: Theme.spacing.radiusXlarge
     color: Theme.palette.backgroundSecondary
@@ -422,6 +423,7 @@ Rectangle {
                 AccountDelegate {
                     Layout.fillWidth: true
                     onLabelRequested: (accountId, isPublic) => root.labelRequested(accountId, isPublic)
+                    onViewInExplorerRequested: (id) => root.viewAccountInExplorerRequested(id)
                 }
             }
         }

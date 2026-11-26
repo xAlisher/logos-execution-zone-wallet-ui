@@ -34,6 +34,8 @@ Rectangle {
     signal transferDeshieldedRequested(string fromAccountId, string toAccountId, string amount)
     signal bridgeWithdrawRequested(string fromAccountId, string bedrockAccountPkHex, string amount)
     signal labelRequested(string accountId, bool isPublic)
+    signal viewTxInExplorerRequested(string txHash)
+    signal viewAccountInExplorerRequested(string accountIdBase58)
 
     color: Theme.palette.background
 
@@ -53,6 +55,7 @@ Rectangle {
             sequencerAddr: root.sequencerAddr
             syncProblem: root.syncProblem
             networkPresets: root.networkPresets
+            onViewAccountInExplorerRequested: (id) => root.viewAccountInExplorerRequested(id)
 
             onCreatePublicAccountRequested: root.createPublicAccountRequested()
             onCreatePrivateAccountRequested: root.createPrivateAccountRequested()
@@ -70,6 +73,7 @@ Rectangle {
             transferTxHash: root.transferTxHash
             transferResultIsError: root.transferResultIsError
             transferPending: root.transferPending
+            onViewInExplorerRequested: (txHash) => root.viewTxInExplorerRequested(txHash)
 
             onTransferPublicRequested: (fromId, toAddress, amount) => root.transferPublicRequested(fromId, toAddress, amount)
             onTransferPrivateRequested: (fromId, toKeysJsonOrAddress, amount) => root.transferPrivateRequested(fromId, toKeysJsonOrAddress, amount)

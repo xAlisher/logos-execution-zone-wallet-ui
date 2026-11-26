@@ -1,3 +1,6 @@
+#include <QVariantList>
+#include <QVariantMap>
+
 class LEZWalletBackend
 {
     PROP(bool isWalletOpen READONLY)
@@ -45,4 +48,29 @@ class LEZWalletBackend
 
     SLOT(bool checkLabelAvailable(QString label))
     SLOT(QString addLabel(QString label, QString accountIdHex, bool isPublic))
+
+    // ---- Explorer (the LEZ app's Explorer tab; logic in explorer/ExplorerService) ----
+    // Recent blocks, newest first; the 2 s tip poll prepends, "Load more" appends.
+    PROP(QVariantList explorerRecentBlocks READONLY)
+    PROP(qlonglong explorerChainHeight=0 READONLY)
+    // "Connecting" / "Connected" / "Error".
+    PROP(QString explorerConnectionStatus READONLY)
+    // { state: Stopped|Starting|Syncing|CaughtUp|Error|Stalled, blockId, error }.
+    PROP(QVariantMap explorerSyncStatus READONLY)
+    // The read-only sequencer's config JSON in effect, and the built-in default.
+    PROP(QString explorerConfigText READONLY)
+    PROP(QString explorerDefaultConfig READONLY)
+
+    SLOT(bool explorerApplyConfigJson(QString json))
+    SLOT(bool explorerResetSequencerCache())
+    SLOT(void explorerRefreshBlocks())
+    SLOT(void explorerLoadMoreBlocks())
+    SLOT(QVariantMap explorerGetBlockById(QString id))
+    SLOT(QVariantMap explorerGetBlockByHash(QString hash))
+    SLOT(QVariantMap explorerGetTransaction(QString hash))
+    SLOT(QVariantMap explorerGetAccount(QString accountId))
+    SLOT(QVariantList explorerGetTransactionsByAccount(QString accountId, int offset, int limit))
+    SLOT(QVariantMap explorerSearch(QString query))
+
+    SIGNAL(explorerError(QString message))
 }
