@@ -35,6 +35,8 @@ Item {
     component Panel: Rectangle {
         id: panel
         property string title: ""
+        // What the block is for, in small print right under its title.
+        property string description: ""
         default property alias content: panelColumn.data
         Layout.fillWidth: true
         radius: 6
@@ -52,16 +54,17 @@ Item {
                 text: panel.title
                 font.weight: Theme.typography.weightBold
             }
+            LogosText {
+                Layout.fillWidth: true
+                visible: text.length > 0
+                text: panel.description
+                wrapMode: Text.WordWrap
+                color: Theme.palette.textSecondary
+                font.pixelSize: Theme.typography.secondaryText
+            }
         }
     }
 
-    // Small print under a block.
-    component Note: LogosText {
-        Layout.fillWidth: true
-        wrapMode: Text.WordWrap
-        color: Theme.palette.textSecondary
-        font.pixelSize: Theme.typography.secondaryText
-    }
 
     LogosScrollView {
         id: scroll
@@ -105,21 +108,13 @@ Item {
                     LogosText {
                         objectName: "lezAccountPageName"
                         // Its own width, so the row stays as wide as its content and centres;
-                        // a long name elides before it pushes the pencil and the tag out.
+                        // a long name elides before it pushes the tag out.
                         Layout.maximumWidth: Math.max(0, scroll.availableWidth - 120)
                         text: root.row ? (root.row.name || ("Account " + Format.shortenHead(root.address))) : ""
                         textFormat: Text.PlainText
                         elide: Text.ElideRight
                         font.pixelSize: Theme.typography.titleText
                         font.weight: Theme.typography.weightBold
-                    }
-                    LogosIconButton {
-                        visible: !!root.row && !root.row.name
-                        flat: true; size: 24; iconSize: 16
-                        iconSource: Qt.resolvedUrl("../icons/edit.svg")
-                        iconColor: hovered ? Theme.palette.text : Theme.palette.textTertiary
-                        onClicked: root.labelRequested(root.row.accountId, root.isPublic)
-                        LogosToolTip { text: qsTr("Name this account"); visible: parent.hovered; delay: 400 }
                     }
                     LogosText {
                         text: root.isPublic ? qsTr("Public") : qsTr("Private")
@@ -136,14 +131,48 @@ Item {
                     color: Theme.palette.primary
                     font.pixelSize: Theme.typography.titleText
                 }
-                LogosButton {
-                    objectName: "lezAccountPageSend"
+                // Send first and strongest; then the account's own secondary actions.
+                RowLayout {
+                    Layout.fillWidth: false
                     Layout.alignment: Qt.AlignHCenter
                     Layout.topMargin: Theme.spacing.small
-                    Layout.preferredWidth: 240
-                    variant: LogosButton.Variant.Primary
-                    text: qsTr("Send")
-                    onClicked: root.sendRequested(root.row.accountId, root.isPublic)
+                    Layout.bottomMargin: Theme.spacing.large
+                    spacing: Theme.spacing.small
+                    LogosButton {
+                        objectName: "lezAccountPageSend"
+                        Layout.preferredWidth: 200
+                        variant: LogosButton.Variant.Primary
+                        text: qsTr("Send")
+                        onClicked: root.sendRequested(root.row.accountId, root.isPublic)
+                    }
+                    // The core adds names and can't change or remove one, and an account's name is
+                    // all of its names joined: so a named account can't be renamed from here yet.
+                    // Wrapped: a disabled button gets no hover, and its tooltip is the reason.
+                    Item {
+                        implicitWidth: renameButton.implicitWidth
+                        implicitHeight: renameButton.implicitHeight
+                        LogosButton {
+                            id: renameButton
+                            objectName: "lezAccountPageRename"
+                            readonly property bool named: !!root.row && root.row.name.length > 0
+                            anchors.fill: parent
+                            enabled: !named
+                            text: named ? qsTr("Rename") : qsTr("Name")
+                            onClicked: root.labelRequested(root.row.accountId, root.isPublic)
+                        }
+                        HoverHandler { id: renameHover }
+                        LogosToolTip {
+                            visible: renameButton.named && renameHover.hovered
+                            text: qsTr("The wallet can't change a name once it is set yet.")
+                        }
+                    }
+                    // Public only: a private account isn't on chain in the clear.
+                    LogosButton {
+                        objectName: "lezAccountPageExplorer"
+                        visible: root.isPublic
+                        text: qsTr("View in explorer")
+                        onClicked: root.viewInExplorerRequested(root.address)
+                    }
                 }
             }
 
@@ -152,18 +181,15 @@ Item {
                 objectName: "lezAccountPageReceivePublic"
                 visible: root.isPublic
                 title: qsTr("Receive public transfer")
+                description: qsTr("Share this address to receive public transfers. To bring tokens "
+                                  + "in from the Blockchain app, deposit to it there.")
 
                 QrCode {
                     objectName: "lezAccountPageQr"
                     Layout.alignment: Qt.AlignHCenter
                     visible: root.isPublic
-                    targetSize: 200
+                    targetSize: 280
                     text: root.address
-                }
-                Note {
-                    horizontalAlignment: Text.AlignHCenter
-                    text: qsTr("Share this address to receive public transfers. To bring tokens in "
-                               + "from the Blockchain app, deposit to it there.")
                 }
                 LogosText {
                     Layout.topMargin: Theme.spacing.small
@@ -187,13 +213,6 @@ Item {
                         value: root.address
                         LogosToolTip { text: qsTr("Copy address"); visible: parent.hovered; delay: 400 }
                     }
-                    LogosIconButton {
-                        flat: true; size: 24; iconSize: 16
-                        iconSource: Qt.resolvedUrl("../icons/explorer.svg")
-                        iconColor: hovered ? Theme.palette.text : Theme.palette.textTertiary
-                        onClicked: root.viewInExplorerRequested(root.address)
-                        LogosToolTip { text: qsTr("View in explorer"); visible: parent.hovered; delay: 400 }
-                    }
                 }
             }
 
@@ -204,11 +223,8 @@ Item {
                 objectName: "lezAccountPageReceivePrivate"
                 visible: !root.isPublic
                 title: qsTr("Receive private transfer")
-
-                Note {
-                    text: qsTr("Share these keys to receive privately. A private transfer is made "
-                               + "out to them.")
-                }
+                description: qsTr("Share these keys to receive privately. A private transfer is "
+                                  + "made out to them.")
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 6
@@ -239,6 +255,9 @@ Item {
                 objectName: "lezAccountPagePrivateAddress"
                 visible: !root.isPublic
                 title: qsTr("Address")
+                description: qsTr("For your own reference and for transfers between your accounts. "
+                                  + "Nobody can send to it, so there is no point sharing it: to be "
+                                  + "paid privately, share the keys above.")
 
                 LogosSelectableText {
                     Layout.fillWidth: true
@@ -247,35 +266,25 @@ Item {
                     font.family: Theme.typography.mono
                     font.pixelSize: Theme.typography.secondaryText
                 }
-                Note {
-                    text: qsTr("For your own reference and for transfers between your accounts. "
-                               + "Nobody can send to it, so there is no point sharing it: to be paid "
-                               + "privately, share the keys above.")
+            }
+
+            Panel {
+                objectName: "lezAccountPageActivityPanel"
+                title: qsTr("Activity")
+                description: root.isPublic ? ""
+                             : qsTr("A private account's activity isn't on chain in the clear, and "
+                                    + "the wallet keeps no history of it yet.")
+
+                ActivityView {
+                    objectName: "lezAccountPageActivity"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 280
+                    visible: root.isPublic
+                    walletBackend: root.walletBackend
+                    fixedAccount: root.isPublic ? root.address : ""
+                    limit: 10
+                    onOpenTxRequested: (h) => root.openTxRequested(h)
                 }
-            }
-
-            LogosText {
-                Layout.topMargin: Theme.spacing.small
-                text: qsTr("Activity")
-                font.pixelSize: Theme.typography.subtitleText
-                font.weight: Theme.typography.weightBold
-            }
-
-            Note {
-                visible: !root.isPublic
-                text: qsTr("A private account's activity isn't on chain in the clear, and the "
-                           + "wallet keeps no history of it yet.")
-            }
-
-            ActivityView {
-                objectName: "lezAccountPageActivity"
-                Layout.fillWidth: true
-                Layout.preferredHeight: 320
-                visible: root.isPublic
-                walletBackend: root.walletBackend
-                fixedAccount: root.isPublic ? root.address : ""
-                limit: 10
-                onOpenTxRequested: (h) => root.openTxRequested(h)
             }
         }
     }
