@@ -234,8 +234,14 @@ Rectangle {
         Qt.callLater(function () { if (explorerLoader.item) open(explorerLoader.item) })
     }
 
+    // The frame belongs to the app, not to the way in: the welcome, unlock and setup screens
+    // stay full screen (their card offers the Explorer instead).
+    readonly property bool frameShown: d.isWalletOpen || appTabs.currentIndex === 1
+
     ColumnLayout {
         id: frameHeader
+        visible: root.frameShown
+        height: visible ? implicitHeight : 0
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
@@ -318,8 +324,8 @@ Rectangle {
         id: stackView
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: frameHeader.bottom
-        anchors.topMargin: Theme.spacing.small
+        anchors.top: root.frameShown ? frameHeader.bottom : parent.top
+        anchors.topMargin: root.frameShown ? Theme.spacing.small : 0
         anchors.bottom: parent.bottom
         visible: appTabs.currentIndex === 0
 
@@ -358,6 +364,7 @@ Rectangle {
                         }
                     )
                 }
+                onExploreRequested: root.showInExplorer(function (ex) { ex.goHome() })
                 onDefaultPathsWanted: {
                     if (!backend) return
                     logos.watch(backend.defaultWalletDirectory(),

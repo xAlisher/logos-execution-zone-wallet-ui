@@ -29,6 +29,8 @@ ColumnLayout {
     signal unlockWallet(string password)
     // "I already have a wallet" with no saved paths: ask for lez_core's default wallet folder.
     signal defaultPathsWanted()
+    // The Explorer, from the way in: it needs no wallet.
+    signal exploreRequested()
 
     function unlockFailed(message) { welcomePage.unlockFailed(message) }
     function offerDefaultPaths(dir) {
@@ -164,6 +166,7 @@ ColumnLayout {
         storagePath: root.savedStoragePath
         busy: root.unlockBusy
         onUnlockRequested: (password) => root.unlockWallet(password)
+        onExploreRequested: root.exploreRequested()
         onSetupRequested: {
             root.createError = ""
             root.openError = ""

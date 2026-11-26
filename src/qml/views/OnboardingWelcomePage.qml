@@ -17,6 +17,7 @@ Item {
     property bool busy: false
 
     signal setupRequested()
+    signal exploreRequested()
     signal unlockRequested(string password)
 
     function submit() {
@@ -52,7 +53,6 @@ Item {
     // plain surface to read.
     Rectangle {
         objectName: "lezUnlockCard"
-        visible: root.savedWallet
         anchors.centerIn: column
         width: column.width + 2 * Theme.spacing.xlarge
         height: column.height + 2 * Theme.spacing.xlarge
@@ -152,6 +152,20 @@ Item {
             enabled: !root.busy
             text: root.savedWallet ? qsTr("Create new or unlock other wallet") : qsTr("Set up your wallet")
             onClicked: root.setupRequested()
+        }
+
+        // The chain needs no wallet: the Explorer is one step away from the way in.
+        LogosText {
+            objectName: "lezExploreButton"
+            Layout.alignment: Qt.AlignHCenter
+            Layout.preferredHeight: 44
+            verticalAlignment: Text.AlignVCenter
+            text: qsTr("Explore the chain")
+            color: Theme.palette.primary
+            font.pixelSize: Theme.typography.secondaryText
+            font.underline: exploreHover.hovered
+            HoverHandler { id: exploreHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { enabled: !root.busy; onTapped: root.exploreRequested() }
         }
     }
 }
