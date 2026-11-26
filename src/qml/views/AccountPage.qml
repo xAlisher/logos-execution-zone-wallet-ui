@@ -28,6 +28,19 @@ Item {
 
     readonly property bool isPublic: row ? row.isPublic : true
     readonly property string address: row ? row.address : ""
+
+    // A public account's public key (hex). In v0.4 the first transfer to a new public account
+    // has to carry it: the address is a hash of the key, so the address alone can't be paid
+    // until the account exists.
+    property string publicKeyHex: ""
+    function loadPublicKey() {
+        root.publicKeyHex = ""
+        if (!root.walletBackend || !root.row || !root.row.isPublic) return
+        logos.watch(root.walletBackend.getPublicAccountKey(root.row.accountId),
+            function (key) { root.publicKeyHex = /^[0-9a-fA-F]{64}$/.test(key || "") ? key.toLowerCase() : "" },
+            function (err) { root.publicKeyHex = "" })
+    }
+    onRowChanged: loadPublicKey()
     readonly property string keysJson: row ? row.keysJson : ""
     readonly property var keys: row ? row.keys : ({})
 
@@ -222,6 +235,41 @@ Item {
                         LogosToolTip { text: qsTr("Copy address"); visible: parent.hovered; delay: 400 }
                     }
                     Item { Layout.fillWidth: true }
+                }
+                LogosText {
+                    Layout.topMargin: Theme.spacing.small
+                    text: qsTr("Public key")
+                    color: Theme.palette.textSecondary
+                    font.pixelSize: Theme.typography.secondaryText
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 6
+                    LogosSelectableText {
+                        objectName: "lezAccountPagePublicKey"
+                        Layout.fillWidth: true
+                        Layout.maximumWidth: Math.ceil(implicitWidth)
+                        text: root.publicKeyHex.length > 0 ? root.publicKeyHex : "…"
+                        wrapMode: Text.WrapAnywhere
+                        font.family: Theme.typography.mono
+                        font.pixelSize: Theme.typography.secondaryText
+                    }
+                    LogosCopyButton {
+                        objectName: "lezAccountPageCopyPublicKey"
+                        visible: root.publicKeyHex.length > 0
+                        value: root.publicKeyHex
+                        LogosToolTip { text: qsTr("Copy public key"); visible: parent.hovered; delay: 400 }
+                    }
+                    Item { Layout.fillWidth: true }
+                }
+                LogosText {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    text: qsTr("Only for the very first transfer to this account: until it has "
+                               + "received once, a sender needs the public key. After that the "
+                               + "address is enough.")
+                    color: Theme.palette.textTertiary
+                    font.pixelSize: Theme.typography.secondaryText
                 }
             }
 
