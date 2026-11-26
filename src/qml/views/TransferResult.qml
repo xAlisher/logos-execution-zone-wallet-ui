@@ -16,6 +16,10 @@ ColumnLayout {
 
     signal viewInExplorerRequested(string txHash)
 
+    // A layout inside a layout fills the height by default: this one takes only its own,
+    // or it splits the page with the form above it and leaves half of it empty.
+    Layout.fillHeight: false
+
     spacing: Theme.spacing.small
 
     RowLayout {
