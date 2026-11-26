@@ -16,6 +16,20 @@ Rectangle {
     property var accountModel: null
     property int lastSyncedBlock: 0
     property int currentBlockHeight: 0
+    // The sequencer this wallet talks to, and the presets that name one.
+    property string sequencerAddr: ""
+    property var networkPresets: []
+    // Why the wallet isn't keeping up, in words; "" when it is.
+    property string syncProblem: ""
+
+    function trimUrl(u) { return String(u || "").replace(/\/+$/, "") }
+    readonly property string networkName: {
+        var a = trimUrl(sequencerAddr)
+        for (var i = 0; i < networkPresets.length; ++i)
+            if (trimUrl(networkPresets[i].url) === a) return networkPresets[i].name
+        return a.length ? qsTr("Custom") : ""
+    }
+    readonly property string networkHost: trimUrl(sequencerAddr).replace(/^https?:\/\//, "")
     readonly property bool syncing: currentBlockHeight > 0
                                  && lastSyncedBlock < currentBlockHeight
     property bool justSettled: false
@@ -77,6 +91,27 @@ Rectangle {
                 text: qsTr("Refresh")
                 onClicked: root.fetchBalancesRequested()
             }
+        }
+
+        // Which network, always: a wallet on the wrong one otherwise just reads zero.
+        LogosText {
+            objectName: "lezNetworkLine"
+            Layout.fillWidth: true
+            Layout.minimumWidth: 0
+            visible: root.networkName.length > 0
+            text: qsTr("Network: %1 · %2").arg(root.networkName).arg(root.networkHost)
+            font.pixelSize: Theme.typography.secondaryText
+            color: Theme.palette.textSecondary
+            elide: Text.ElideRight
+        }
+
+        LogosNotice {
+            objectName: "lezSyncProblem"
+            Layout.fillWidth: true
+            visible: message.length > 0
+            severity: LogosNotice.Warning
+            message: root.syncProblem
+            shown: message.length > 0
         }
 
         Rectangle {

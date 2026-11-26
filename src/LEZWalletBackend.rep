@@ -12,6 +12,9 @@ class LEZWalletBackend
     PROP(QString sequencerAddr READONLY)
     PROP(QString testnetUrl READONLY)
     PROP(QString localhostUrl READONLY)
+    PROP(QString devnetUrl READONLY)
+    // Why the wallet isn't keeping up with the chain, in words; "" when it is.
+    PROP(QString syncProblem READONLY)
 
     SLOT(QString createAccountPublic())
     SLOT(QString createAccountPrivate())

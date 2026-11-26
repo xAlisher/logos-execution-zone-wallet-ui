@@ -18,6 +18,9 @@ Rectangle {
     property bool transferPending: false
     property int lastSyncedBlock: 0
     property int currentBlockHeight: 0
+    property string sequencerAddr: ""
+    property string syncProblem: ""
+    property var networkPresets: []
 
     // --- Public API: output signals (parent connects and calls backend) ---
     signal createPublicAccountRequested()
@@ -47,6 +50,9 @@ Rectangle {
             accountModel: root.accountModel
             lastSyncedBlock: root.lastSyncedBlock
             currentBlockHeight: root.currentBlockHeight
+            sequencerAddr: root.sequencerAddr
+            syncProblem: root.syncProblem
+            networkPresets: root.networkPresets
 
             onCreatePublicAccountRequested: root.createPublicAccountRequested()
             onCreatePrivateAccountRequested: root.createPrivateAccountRequested()

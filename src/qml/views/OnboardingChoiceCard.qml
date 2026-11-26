@@ -14,6 +14,9 @@ LogosFrame {
     property string description: ""
     property string badge: ""
     property bool selected: false
+    // Shown under the title row, inside the card (e.g. the Custom URL field). Outside the
+    // row's click area, so a field here takes its own clicks and typing.
+    default property alias extra: extraColumn.data
 
     signal picked()
 
@@ -26,10 +29,14 @@ LogosFrame {
     contentItem: Item {
         implicitWidth: row.implicitWidth + 2 * Theme.spacing.large
         implicitHeight: row.implicitHeight + 2 * Theme.spacing.large
+                        + (extraColumn.visibleChildren.length > 0
+                           ? extraColumn.implicitHeight + Theme.spacing.medium : 0)
 
         RowLayout {
             id: row
-            anchors.fill: parent
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
             anchors.margins: Theme.spacing.large
             spacing: Theme.spacing.medium
 
@@ -75,9 +82,21 @@ LogosFrame {
         }
 
         MouseArea {
-            anchors.fill: parent
+            anchors.fill: row
+            anchors.margins: -Theme.spacing.large
             cursorShape: Qt.PointingHandCursor
             onClicked: root.picked()
+        }
+
+        ColumnLayout {
+            id: extraColumn
+            anchors.top: row.bottom
+            anchors.topMargin: Theme.spacing.medium
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: Theme.spacing.large
+            anchors.rightMargin: Theme.spacing.large
+            spacing: Theme.spacing.small
         }
     }
 }

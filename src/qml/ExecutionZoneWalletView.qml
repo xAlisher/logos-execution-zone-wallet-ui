@@ -231,6 +231,7 @@ Rectangle {
             OnboardingView {
                 id: onboarding
 
+                devnetUrl: backend ? backend.devnetUrl : ""
                 testnetUrl: backend ? backend.testnetUrl : ""
                 localhostUrl: backend ? backend.localhostUrl : ""
                 // A saved wallet: the home screen asks for its password; "I already have a
@@ -327,6 +328,11 @@ Rectangle {
                 privateAccountModel: root.privateAccountModel
                 lastSyncedBlock: backend ? backend.lastSyncedBlock : 0
                 currentBlockHeight: backend ? backend.currentBlockHeight : 0
+                sequencerAddr: backend ? backend.sequencerAddr : ""
+                syncProblem: backend ? backend.syncProblem : ""
+                networkPresets: backend ? [{ name: "Devnet", url: backend.devnetUrl },
+                                           { name: "Testnet", url: backend.testnetUrl },
+                                           { name: "Localhost", url: backend.localhostUrl }] : []
 
                 onCreatePublicAccountRequested: {
                     if (!backend) { console.warn("backend is null"); return }

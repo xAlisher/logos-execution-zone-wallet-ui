@@ -29,6 +29,9 @@ namespace {
     const char LEZ_MODULE[] = "lez_core";
     const char TESTNET_URL[] = "https://testnet.lez.logos.co";
     const char LOCALHOST_URL[] = "http://127.0.0.1:3040";
+    // The developers' pre-release network: seq-0 of the v0.4.0-rc3 devnet deployment, until it
+    // has a DNS name. Users get testnet by default.
+    const char DEVNET_URL[] = "http://46.225.45.199:3040";
     const int WALLET_FFI_SUCCESS = 0;
     // wallet_ffi_open: the storage did not decrypt (wrong password, or a damaged file).
     const int WALLET_FFI_WRONG_PASSWORD = 25;
@@ -140,6 +143,8 @@ LEZWalletBackend::LEZWalletBackend(LogosAPI* logosAPI, QObject* parent)
     setCurrentBlockHeight(0);
     setTestnetUrl(QString::fromLatin1(TESTNET_URL));
     setLocalhostUrl(QString::fromLatin1(LOCALHOST_URL));
+    setDevnetUrl(QString::fromLatin1(DEVNET_URL));
+    setSyncProblem(QString());
 
     // Load persisted config/storage paths.
     QSettings s(SETTINGS_ORG, SETTINGS_APP);
@@ -324,12 +329,18 @@ void LEZWalletBackend::syncNextChunk()
     if (static_cast<quint64>(lastVal) <= synced) {
         qWarning() << "LEZWalletBackend: sync made no progress at block" << synced
                    << "(target" << m_syncTarget << "), stopping.";
+        // lez_core logs the cause (often a parse error: a sequencer on another LEZ version)
+        // but returns no text, so say what the person can check.
+        setSyncProblem(tr("Sync stopped at block %1 of %2. The sequencer's blocks don't read "
+                          "as this wallet's LEZ version: check the network.")
+                           .arg(synced).arg(m_syncTarget));
         m_syncing = false;
         updateBalances();
         return;
     }
 
     setLastSyncedBlock(lastVal);
+    setSyncProblem(QString());
     QTimer::singleShot(0, this, &LEZWalletBackend::syncNextChunk);
 }
 
@@ -361,6 +372,12 @@ void LEZWalletBackend::fetchAndUpdateBlockHeights()
         setLastSyncedBlock(lastVal);
     if (currentBlockHeight() != currentVal)
         setCurrentBlockHeight(currentVal);
+    // Height 0 from an open wallet: the sequencer didn't answer.
+    if (isWalletOpen() && currentVal <= 0)
+        setSyncProblem(tr("Can't reach the sequencer at %1. Balances may be out of date.")
+                           .arg(m_logos->lez_core.get_sequencer_addr()));
+    else if (currentVal > 0 && syncProblem().startsWith(tr("Can't reach")))
+        setSyncProblem(QString());
 }
 
 

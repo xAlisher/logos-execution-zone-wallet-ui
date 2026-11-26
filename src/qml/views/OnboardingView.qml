@@ -10,6 +10,7 @@ import Logos.Controls
 ColumnLayout {
     id: root
 
+    property string devnetUrl: ""
     property string testnetUrl: ""
     property string localhostUrl: ""
     property string createError: ""
@@ -290,6 +291,7 @@ ColumnLayout {
             OnboardingNetworkPage {
                 id: networkStep
                 objectName: "lezOnboardingNetworkStep"
+                devnetUrl: root.devnetUrl
                 testnetUrl: root.testnetUrl
                 localhostUrl: root.localhostUrl
             }
