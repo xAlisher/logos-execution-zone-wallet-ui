@@ -473,6 +473,7 @@ Rectangle {
                 privateAccountModel: root.privateAccountModel
                 lastSyncedBlock: backend ? backend.lastSyncedBlock : 0
                 currentBlockHeight: backend ? backend.currentBlockHeight : 0
+                onTabRequested: (key) => root.currentTab = key
                 onViewTxInExplorerRequested: (txHash) => root.showInExplorer(function (ex) { ex.navigateTx(txHash) })
                 onViewAccountInExplorerRequested: (id) => root.showInExplorer(function (ex) { ex.navigateAccount(id) })
                 sequencerAddr: backend ? backend.sequencerAddr : ""

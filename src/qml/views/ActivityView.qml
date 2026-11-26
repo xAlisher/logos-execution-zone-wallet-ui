@@ -20,11 +20,17 @@ ColumnLayout {
 
     signal openTxRequested(string txHash)
 
+    // Set on an account's page: that account only, no picker, no title or note of its own.
+    property string fixedAccount: ""
+    // How many to ask for; the account page shows the latest few.
+    property int limit: 20
+
     property var txs: []
     property bool loading: false
     property bool loaded: false
-    readonly property string accountBase58: accountPicker.currentValue
-                                            ? Base58.encode(accountPicker.currentValue) : ""
+    readonly property string accountBase58: fixedAccount.length > 0 ? fixedAccount
+                                            : accountPicker.currentValue
+                                              ? Base58.encode(accountPicker.currentValue) : ""
 
     function load() {
         if (!root.walletBackend || root.accountBase58.length === 0) {
@@ -33,7 +39,7 @@ ColumnLayout {
             return
         }
         root.loading = true
-        logos.watch(root.walletBackend.explorerGetTransactionsByAccount(root.accountBase58, 0, 20),
+        logos.watch(root.walletBackend.explorerGetTransactionsByAccount(root.accountBase58, 0, root.limit),
             function (result) { root.txs = result || []; root.loading = false; root.loaded = true },
             function (err) { root.txs = []; root.loading = false; root.loaded = true })
     }
@@ -43,6 +49,7 @@ ColumnLayout {
     spacing: Theme.spacing.medium
 
     LogosText {
+        visible: root.fixedAccount.length === 0
         text: qsTr("Activity")
         color: Theme.palette.text
         font.pixelSize: Theme.typography.titleText
@@ -51,6 +58,7 @@ ColumnLayout {
 
     RowLayout {
         Layout.fillWidth: true
+        visible: root.fixedAccount.length === 0
         spacing: Theme.spacing.small
         AccountComboBox {
             id: accountPicker
@@ -72,6 +80,7 @@ ColumnLayout {
 
     LogosText {
         objectName: "lezActivityNote"
+        visible: root.fixedAccount.length === 0
         Layout.fillWidth: true
         wrapMode: Text.WordWrap
         text: qsTr("Transactions of your public accounts, as the Explorer sees them. Private "

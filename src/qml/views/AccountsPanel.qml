@@ -31,6 +31,24 @@ Item {
     signal createPrivateAccountRequested()
     signal labelRequested(string accountId, bool isPublic)
     signal viewAccountInExplorerRequested(string accountIdBase58)
+    signal accountOpened(string accountId)
+
+    // The row on screen for an account, so its page can follow its name and balance live.
+    // Rows are rebuilt when the account list changes (a new or renamed account): rowsVersion
+    // moves then, and a binding through rowFor() looks again.
+    property int rowsVersion: 0
+    function rowFor(accountId) {
+        void rowsVersion
+        var cards = [publicCard, privateCard]
+        for (var c = 0; c < cards.length; ++c) {
+            var rep = cards[c].rows
+            for (var i = 0; i < rep.count; ++i) {
+                var r = rep.itemAt(i)
+                if (r && r.accountId === accountId) return r
+            }
+        }
+        return null
+    }
 
     component AccountsCard: ColumnLayout {
         id: card
@@ -41,6 +59,7 @@ Item {
         property var accountsModel: null
         property bool isPublic: true
         signal addClicked()
+        readonly property alias rows: rowRepeater
 
         Layout.fillWidth: true
         spacing: Theme.spacing.small
@@ -74,7 +93,7 @@ Item {
         }
 
         LogosText {
-            visible: rows.count === 0
+            visible: rowRepeater.count === 0
             Layout.topMargin: Theme.spacing.small
             text: card.emptyText
             color: Theme.palette.textSecondary
@@ -82,8 +101,10 @@ Item {
         }
 
         Repeater {
-            id: rows
+            id: rowRepeater
             model: card.accountsModel
+            onItemAdded: root.rowsVersion++
+            onItemRemoved: root.rowsVersion++
             delegate: AccountRow {
                 Layout.fillWidth: true
                 name: model.name ?? ""
@@ -93,6 +114,7 @@ Item {
                 keysJson: model.keysJson ?? ""
                 onLabelRequested: (id, pub) => root.labelRequested(id, pub)
                 onViewInExplorerRequested: (id) => root.viewAccountInExplorerRequested(id)
+                onOpened: root.accountOpened(accountId)
             }
         }
     }
@@ -160,6 +182,7 @@ Item {
             }
 
             AccountsCard {
+                id: publicCard
                 objectName: "lezPublicAccountsCard"
                 title: qsTr("Public")
                 description: qsTr("Seen on chain. Use one to receive deposits and public transfers.")
@@ -171,6 +194,7 @@ Item {
             }
 
             AccountsCard {
+                id: privateCard
                 objectName: "lezPrivateAccountsCard"
                 Layout.topMargin: Theme.spacing.large
                 title: qsTr("Private")

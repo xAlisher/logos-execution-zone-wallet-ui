@@ -9,7 +9,7 @@ import "../Base58.js" as Base58
 import "../Format.js" as Format
 import "../Units.js" as Units
 
-// One account on the Balance tab, laid out as the Keycard and Signer apps lay out an account
+// One account on the Accounts tab, laid out as the Keycard and Signer apps lay out an account
 // (accountkit's AccountDetails): a rounded row, the name in bold with the edit pencil beside
 // it, then labelled lines in small text with mono values and copy buttons. The balance sits at
 // the right, as the Ethereum wallet shows a token's. A private account adds its keys line: the
@@ -25,6 +25,8 @@ Rectangle {
 
     signal labelRequested(string accountId, bool isPublic)
     signal viewInExplorerRequested(string accountIdBase58)
+    // A click on the row itself (not on one of its buttons): open the account's page.
+    signal opened()
 
     readonly property string address: Base58.encode(root.accountId)
     readonly property var keys: {
@@ -35,7 +37,9 @@ Rectangle {
     radius: 6
     color: rowHover.hovered ? Theme.palette.backgroundTertiary : Theme.palette.backgroundSecondary
     Behavior on color { ColorAnimation { duration: 120 } }
-    HoverHandler { id: rowHover }
+    HoverHandler { id: rowHover; cursorShape: Qt.PointingHandCursor }
+    // Under the buttons: they take their own clicks, so only the rest of the row opens it.
+    TapHandler { onTapped: root.opened() }
 
     RowLayout {
         id: layout

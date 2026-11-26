@@ -45,17 +45,26 @@ Item {
     signal labelRequested(string accountId, bool isPublic)
     signal viewTxInExplorerRequested(string txHash)
     signal viewAccountInExplorerRequested(string accountIdBase58)
+    // A tab the page wants shown, e.g. Send from an account's page.
+    signal tabRequested(string key)
+
+    // The account whose page is open on the Accounts tab; "" shows the list. Leaving the tab
+    // closes it, as a detail screen closes when another tab is chosen in the other wallets.
+    property string openAccountId: ""
+    onPageChanged: openAccountId = ""
 
     StackLayout {
         anchors.fill: parent
         currentIndex: ["balance", "send", "bridge", "activity", "settings"].indexOf(root.page)
 
-        // ---- Balance ----
+        // ---- Accounts ----
         PageColumn {
             objectName: "lezPageBalance"
             AccountsPanel {
+                id: accountsPanel
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+                visible: root.openAccountId.length === 0
                 publicAccountModel: root.publicAccountModel
                 privateAccountModel: root.privateAccountModel
                 lastSyncedBlock: root.lastSyncedBlock
@@ -65,6 +74,23 @@ Item {
                 onCreatePrivateAccountRequested: root.createPrivateAccountRequested()
                 onLabelRequested: (accountId, isPublic) => root.labelRequested(accountId, isPublic)
                 onViewAccountInExplorerRequested: (id) => root.viewAccountInExplorerRequested(id)
+                onAccountOpened: (id) => root.openAccountId = id
+            }
+            AccountPage {
+                objectName: "lezAccountPage"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                visible: root.openAccountId.length > 0
+                row: root.openAccountId.length > 0 ? accountsPanel.rowFor(root.openAccountId) : null
+                walletBackend: root.walletBackend
+                onBackRequested: root.openAccountId = ""
+                onSendRequested: (id, isPublic) => {
+                    root.tabRequested("send")
+                    sendPanel.preselect(id, isPublic)
+                }
+                onLabelRequested: (accountId, isPublic) => root.labelRequested(accountId, isPublic)
+                onViewInExplorerRequested: (id) => root.viewAccountInExplorerRequested(id)
+                onOpenTxRequested: (h) => root.viewTxInExplorerRequested(h)
             }
         }
 
@@ -72,6 +98,7 @@ Item {
         PageColumn {
             objectName: "lezPageSend"
             TransferTypesPanel {
+                id: sendPanel
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 publicAccountModel: root.publicAccountModel

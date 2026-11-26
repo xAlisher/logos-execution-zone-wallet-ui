@@ -25,6 +25,17 @@ Item {
     signal transferShieldedOwnedRequested(string fromAccountId, string toAccountId, string amount)
     signal transferDeshieldedRequested(string fromAccountId, string toAccountId, string amount)
 
+    // From an account's page: its kind's transfer type (Public, or Private for a private
+    // account) with the account as "from". The person can still change both.
+    function preselect(accountId, isPublic) {
+        transferTypeBar.currentIndex = isPublic ? 0 : 1
+        // The From list swaps models with the type: pick once it holds the new one.
+        Qt.callLater(function () {
+            var i = fromCombo.indexOfValue(accountId)
+            if (i >= 0) fromCombo.currentIndex = i
+        })
+    }
+
     readonly property int fromFilterCount: fromCombo.count
     readonly property int toFilterCount: toCombo.count
 
@@ -116,6 +127,7 @@ Item {
 
             AccountComboBox {
                 id: fromCombo
+                objectName: "lezSendFrom"
                 Layout.fillWidth: true
                 model: (d.isPrivateTab || d.isDeshieldedTab) ? root.privateAccountModel : root.publicAccountModel
                 visible: root.fromFilterCount > 0
