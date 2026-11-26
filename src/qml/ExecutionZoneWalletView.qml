@@ -232,7 +232,7 @@ Rectangle {
     readonly property var tabKeys: d.isWalletOpen
         ? ["balance", "send", "bridge", "activity", "explorer", "settings"]
         : ["wallet", "explorer"]
-    readonly property var tabTitles: ({ balance: qsTr("Balance"), send: qsTr("Send"), bridge: qsTr("Bridge"),
+    readonly property var tabTitles: ({ balance: qsTr("Accounts"), send: qsTr("Send"), bridge: qsTr("Bridge"),
                                         activity: qsTr("Activity"), explorer: qsTr("Explorer"),
                                         settings: qsTr("Settings"), wallet: qsTr("Wallet") })
     // A tab that isn't on the bar any more (the wallet opened or closed) falls back to the first.
@@ -307,7 +307,8 @@ Rectangle {
                 readonly property string name: root.networkNameOf(root.backend ? root.backend.sequencerAddr : "")
                 readonly property bool problem: root.backend !== null && root.backend.syncProblem.length > 0
                 readonly property bool syncing: root.backend !== null && root.backend.currentBlockHeight > 0
-                                                && root.backend.lastSyncedBlock < root.backend.currentBlockHeight
+                                                && root.backend.currentBlockHeight - root.backend.lastSyncedBlock > 10
+                // A few blocks behind is normal between polls: only a real catch-up reads as syncing.
                 Layout.alignment: Qt.AlignVCenter
                 visible: d.isWalletOpen && name.length > 0
                 text: name + " · " + (problem ? qsTr("Not syncing") : syncing ? qsTr("Syncing") : qsTr("Synced"))

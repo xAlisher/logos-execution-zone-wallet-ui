@@ -22,6 +22,7 @@
 #include "logos_sdk.h"
 
 namespace {
+constexpr int POLL_INTERVAL_MS = 15000;
     const char SETTINGS_ORG[] = "Logos";
     const char SETTINGS_APP[] = "ExecutionZoneWalletUI";
     const char CONFIG_PATH_KEY[] = "configPath";
@@ -281,6 +282,15 @@ QVariantList LEZWalletBackend::buildEnrichedAccountList()
 void LEZWalletBackend::finishOpeningWallet()
 {
     setIsWalletOpen(true);
+    if (!m_pollTimer) {
+        m_pollTimer = new QTimer(this);
+        m_pollTimer->setInterval(POLL_INTERVAL_MS);
+        connect(m_pollTimer, &QTimer::timeout, this, [this]() {
+            if (isWalletOpen() && !m_syncing)
+                refreshBalances();
+        });
+    }
+    m_pollTimer->start();
     QTimer::singleShot(0, this, [this]() {
         m_accountModel->replaceFromVariantList(buildEnrichedAccountList());
         fetchAndUpdateBlockHeights();
@@ -548,21 +558,26 @@ void LEZWalletBackend::applySequencerAddrToConfig(const QString& configPath, con
 
 QString LEZWalletBackend::createNew(QString password, QString sequencerAddr)
 {
-    const QString walletDir = defaultWalletDir();
-    if (walletDir.isEmpty())
+    const QString defaultDir = defaultWalletDir();
+    if (defaultDir.isEmpty())
         return createFailed(tr("Could not reach the wallet module. Please try again."));
+
+    // A second wallet (another network, say) goes next to the first, in wallet-2,
+    // wallet-3, ...: never over an existing one. The first stays where it is, and
+    // "I already have a wallet" still finds it in the default folder.
+    QString walletDir = defaultDir;
+    for (int n = 2; QFile::exists(QDir(walletDir).filePath(QStringLiteral("storage.json"))); ++n) {
+        if (n > 99)
+            return createFailed(tr("Too many wallets next to %1. Move some away and try again.")
+                                    .arg(defaultDir));
+        walletDir = defaultDir + QStringLiteral("-%1").arg(n);
+    }
+    if (walletDir != defaultDir)
+        qInfo() << "LEZWalletBackend: a wallet already exists at" << defaultDir
+                << "-- creating the new one at" << walletDir;
 
     const QString localConfigPath = QDir(walletDir).filePath(QStringLiteral("config.json"));
     const QString localStoragePath = QDir(walletDir).filePath(QStringLiteral("storage.json"));
-
-    if (QFile::exists(localStoragePath)) {
-        qWarning() << "LEZWalletBackend: refusing to create over existing storage at"
-                   << localStoragePath;
-        return createFailed(tr("A wallet already exists at %1. Move or remove those "
-                               "files before creating a new wallet here, or use "
-                               "\"Open wallet instead\" to load it.")
-                                .arg(localStoragePath));
-    }
 
     if (!QDir().mkpath(walletDir))
         return createFailed(tr("Could not create the wallet folder at %1.").arg(walletDir));

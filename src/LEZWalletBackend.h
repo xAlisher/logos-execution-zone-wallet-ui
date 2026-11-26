@@ -2,6 +2,7 @@
 #define LEZ_WALLET_BACKEND_H
 
 #include <QObject>
+#include <QTimer>
 #include <QString>
 
 #include "rep_LEZWalletBackend_source.h"
@@ -92,6 +93,9 @@ private:
     void finishOpeningWallet();
 
     bool m_syncing = false;
+    // Re-reads heights and balances while a wallet is open, so the Balance tab and the network
+    // badge keep up without a Refresh button (incoming deposits, transfers to us).
+    QTimer* m_pollTimer = nullptr;
     quint64 m_syncTarget = 0;
     static constexpr quint64 SYNC_CHUNK_SIZE = 100;
 

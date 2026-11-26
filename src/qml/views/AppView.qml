@@ -56,15 +56,13 @@ Item {
             AccountsPanel {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                accountModel: root.accountModel
+                publicAccountModel: root.publicAccountModel
+                privateAccountModel: root.privateAccountModel
                 lastSyncedBlock: root.lastSyncedBlock
                 currentBlockHeight: root.currentBlockHeight
-                sequencerAddr: root.sequencerAddr
                 syncProblem: root.syncProblem
-                networkPresets: root.networkPresets
                 onCreatePublicAccountRequested: root.createPublicAccountRequested()
                 onCreatePrivateAccountRequested: root.createPrivateAccountRequested()
-                onFetchBalancesRequested: root.fetchBalancesRequested()
                 onLabelRequested: (accountId, isPublic) => root.labelRequested(accountId, isPublic)
                 onViewAccountInExplorerRequested: (id) => root.viewAccountInExplorerRequested(id)
             }
