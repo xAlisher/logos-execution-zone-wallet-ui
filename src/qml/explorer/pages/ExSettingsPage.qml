@@ -55,7 +55,7 @@ Item {
         ExFormField {
             id: addrField
             Layout.fillWidth: true
-            label: "Bedrock Address"
+            label: "Logos Blockchain node"
             placeholder: "http://localhost:8080"
             errorText: text.trim() === "" || /^https?:\/\/.+/.test(text.trim())
                        ? "" : "Must start with http:// or https://"
@@ -73,6 +73,8 @@ Item {
 
         ExFormField {
             id: intervalField
+            // The v0.4 sequencer has no such option; kept only so the old bindings resolve.
+            visible: false
             Layout.fillWidth: true
             label: "Polling Interval"
             placeholder: "1s"
@@ -81,6 +83,8 @@ Item {
         }
 
         ColumnLayout {
+            // Likewise not a v0.4 sequencer option.
+            visible: false
             Layout.fillWidth: true
             spacing: 0
 
@@ -245,7 +249,7 @@ Item {
             return "Bedrock address must start with http:// or https://.";
         if (!/^[0-9a-fA-F]{64}$/.test(channelField.text.trim()))
             return "Channel ID must be exactly 64 hex characters.";
-        if (!/^\d+(ms|s|m|h)$/.test(intervalField.text.trim()))
+        if (intervalField.visible && !/^\d+(ms|s|m|h)$/.test(intervalField.text.trim()))
             return "Polling interval must look like 500ms, 1s, 2m or 1h.";
         return "";
     }
@@ -327,8 +331,10 @@ Item {
         obj.bedrock_config.channel_id = channelField.text.trim().toLowerCase();
         delete obj.bedrock_config.addr;
         delete obj.channel_id;
-        obj.allow_chain_reset = chainResetToggle.checked;
-        obj.consensus_info_polling_interval = intervalField.text.trim();
+        // Old indexer options: the v0.4 sequencer rejects unknown fields, so a config
+        // carrying them doesn't load at all.
+        delete obj.allow_chain_reset;
+        delete obj.consensus_info_polling_interval;
 
         var out = JSON.stringify(obj, null, 4);
 

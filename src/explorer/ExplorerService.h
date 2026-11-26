@@ -70,6 +70,7 @@ private:
 
     QString configFilePath();
     bool writeConfigFile(const QString& json);
+    bool normalizeConfigFile();
     QString readConfigFile() const;
     bool startSequencerFromFile();
 
@@ -91,4 +92,5 @@ private:
     quint64 m_lastPolledTip = 0;
     bool m_polledOnce = false;
     QTimer* m_pollTimer = nullptr;
+    bool m_loggerInitialised = false;
 };

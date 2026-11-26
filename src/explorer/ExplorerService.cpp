@@ -60,11 +60,14 @@ namespace {
     "max_num_tx_in_block": 100,
     "mempool_max_size": 100,
     "block_create_timeout": "1h",
+    "retry_pending_blocks_timeout": "5s",
+    "metrics_listen_address": null,
     "bedrock_config": {
         "node_url": "http://localhost:8080",
         "channel_id": "0101010101010101010101010101010101010101010101010101010101010101"
     },
     "gossip": {
+        "listen_addr": "/ip4/127.0.0.1/udp/0/quic-v1",
         "bootstrap_peers": []
     }
 })JSON";
@@ -781,11 +784,83 @@ QString ExplorerService::readConfigFile() const {
     return content;
 }
 
+// The v0.4 sequencer reads its config with deny_unknown_fields and requires
+// retry_pending_blocks_timeout, so a config written for the old indexer, or by the
+// old Settings page (allow_chain_reset, consensus_info_polling_interval), fails to load
+// and start_sequencer returns null with nothing said. Bring the file to the shape this
+// LEZ version takes before every start. Also keep this follower off fixed ports: no
+// metrics exporter (default 0.0.0.0:9000) and gossip on a port the kernel picks, so
+// two Basecamps (or the standalone Explorer) can each run one.
+bool ExplorerService::normalizeConfigFile() {
+    const QString text = readConfigFile();
+    QJsonParseError err{};
+    const QJsonDocument doc = QJsonDocument::fromJson(text.toUtf8(), &err);
+    if (err.error != QJsonParseError::NoError || !doc.isObject())
+        return false;
+    QJsonObject obj = doc.object();
+    const QJsonObject before = obj;
+
+    static const QStringList top = {
+        QStringLiteral("home"), QStringLiteral("max_num_tx_in_block"),
+        QStringLiteral("mempool_max_size"), QStringLiteral("block_create_timeout"),
+        QStringLiteral("retry_pending_blocks_timeout"), QStringLiteral("bedrock_config"),
+        QStringLiteral("genesis"), QStringLiteral("cross_zone"),
+        QStringLiteral("metrics_listen_address"), QStringLiteral("gossip") };
+    static const QStringList bedrock = {
+        QStringLiteral("channel_id"), QStringLiteral("node_url"), QStringLiteral("auth"),
+        QStringLiteral("priority_fee_percent"), QStringLiteral("stale_refund_slots") };
+
+    for (const QString& key : obj.keys())
+        if (!top.contains(key)) obj.remove(key);
+
+    QJsonObject bc = obj.value(QStringLiteral("bedrock_config")).toObject();
+    // The old indexer shape: addr and a top-level channel_id.
+    if (!bc.contains(QStringLiteral("node_url")) && bc.contains(QStringLiteral("addr")))
+        bc.insert(QStringLiteral("node_url"), bc.value(QStringLiteral("addr")));
+    if (!bc.contains(QStringLiteral("channel_id")) && before.contains(QStringLiteral("channel_id")))
+        bc.insert(QStringLiteral("channel_id"), before.value(QStringLiteral("channel_id")));
+    for (const QString& key : bc.keys())
+        if (!bedrock.contains(key)) bc.remove(key);
+    obj.insert(QStringLiteral("bedrock_config"), bc);
+
+    if (!obj.contains(QStringLiteral("retry_pending_blocks_timeout")))
+        obj.insert(QStringLiteral("retry_pending_blocks_timeout"), QStringLiteral("5s"));
+    if (!obj.contains(QStringLiteral("metrics_listen_address")))
+        obj.insert(QStringLiteral("metrics_listen_address"), QJsonValue::Null);
+    QJsonObject gossip = obj.value(QStringLiteral("gossip")).toObject();
+    if (!gossip.contains(QStringLiteral("listen_addr")))
+        gossip.insert(QStringLiteral("listen_addr"), QStringLiteral("/ip4/127.0.0.1/udp/0/quic-v1"));
+    if (!gossip.contains(QStringLiteral("bootstrap_peers")))
+        gossip.insert(QStringLiteral("bootstrap_peers"), QJsonArray());
+    obj.insert(QStringLiteral("gossip"), gossip);
+
+    // Not written here: with <home>/bedrock_funding_public_key present the sequencer gets
+    // past setup and then blocks lez_core in start_sequencer while it backfills the
+    // channel, and the wallet's calls to the same module queue behind it ("Opening your
+    // wallet..." forever). Until lez_core starts the sequencer off its call thread, the
+    // explorer stays off rather than freezing the wallet.
+
+    if (obj == before)
+        return true;
+    const QString out = QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Indented));
+    if (!writeConfigFile(out))
+        return false;
+    setConfigText(out);
+    return true;
+}
+
 bool ExplorerService::startSequencerFromFile() {
     // stops the sequencer if it's already running, then starts it with the config
     // file path.
     //
     // this has the effect of "restarting" the sequencer with the new config.
+    normalizeConfigFile();
+    // The sequencer's own reasons (a config field, an unreachable node) are logged by
+    // its Rust side, which is silent until a logger is set.
+    if (!m_loggerInitialised) {
+        m_modules->lez_core.init_logger(QStringLiteral("info"));
+        m_loggerInitialised = true;
+    }
     m_modules->lez_core.stop_sequencer();
     const qlonglong code = m_modules->lez_core.start_sequencer(configFilePath());
     if (code != 0) {
