@@ -35,7 +35,7 @@ ColumnLayout {
             anchors.leftMargin: Theme.spacing.medium
             anchors.rightMargin: Theme.spacing.medium
             verticalAlignment: TextInput.AlignVCenter
-            font.family: field.mono ? "Menlo, Monaco, Courier New, monospace" : undefined
+            font.family: field.mono ? "Menlo, Monaco, Courier New, monospace" : Qt.application.font.family
             font.pixelSize: Theme.typography.secondaryText
             color: Theme.palette.text
             background: Item {}

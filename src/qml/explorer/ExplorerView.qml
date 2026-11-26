@@ -18,26 +18,7 @@ Rectangle {
     readonly property bool ready: walletBackend !== null
 
     // What the explorer pages call `backend`: the same names, forwarded.
-    readonly property QtObject backend: QtObject {
-        readonly property var recentBlocks: root.walletBackend ? root.walletBackend.explorerRecentBlocks : []
-        readonly property var chainHeight: root.walletBackend ? root.walletBackend.explorerChainHeight : 0
-        readonly property string connectionStatus: root.walletBackend ? root.walletBackend.explorerConnectionStatus : ""
-        readonly property var syncStatus: root.walletBackend ? root.walletBackend.explorerSyncStatus : ({})
-        readonly property string configText: root.walletBackend ? root.walletBackend.explorerConfigText : ""
-        readonly property string defaultConfig: root.walletBackend ? root.walletBackend.explorerDefaultConfig : ""
-        function applyConfigJson(json) { return root.walletBackend.explorerApplyConfigJson(json) }
-        function resetSequencerCache() { return root.walletBackend.explorerResetSequencerCache() }
-        function refreshBlocks() { return root.walletBackend.explorerRefreshBlocks() }
-        function loadMoreBlocks() { return root.walletBackend.explorerLoadMoreBlocks() }
-        function getBlockById(id) { return root.walletBackend.explorerGetBlockById(id) }
-        function getBlockByHash(hash) { return root.walletBackend.explorerGetBlockByHash(hash) }
-        function getTransaction(hash) { return root.walletBackend.explorerGetTransaction(hash) }
-        function getAccount(accountId) { return root.walletBackend.explorerGetAccount(accountId) }
-        function getTransactionsByAccount(accountId, offset, limit) {
-            return root.walletBackend.explorerGetTransactionsByAccount(accountId, offset, limit)
-        }
-        function search(query) { return root.walletBackend.explorerSearch(query) }
-    }
+    readonly property QtObject backend: ExplorerBackendAdapter { walletBackend: root.walletBackend }
 
     // Self-managed navigation history (browser-style back/forward). Each entry
     // is a descriptor { type, param?, query? }.

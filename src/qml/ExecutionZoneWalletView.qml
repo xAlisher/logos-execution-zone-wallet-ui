@@ -227,16 +227,28 @@ Rectangle {
             if (String(presets[i][1] || "").replace(/\/+$/, "") === a) return presets[i][0]
         return qsTr("Custom")
     }
-    // The other tab, to a page: the Explorer opens on its first visit.
+    // ---- Tabs, by key. Unlocked: the app's six; on the way in: back to the wallet, or Explorer.
+    property string currentTab: "wallet"
+    readonly property var tabKeys: d.isWalletOpen
+        ? ["balance", "send", "bridge", "activity", "explorer", "settings"]
+        : ["wallet", "explorer"]
+    readonly property var tabTitles: ({ balance: qsTr("Balance"), send: qsTr("Send"), bridge: qsTr("Bridge"),
+                                        activity: qsTr("Activity"), explorer: qsTr("Explorer"),
+                                        settings: qsTr("Settings"), wallet: qsTr("Wallet") })
+    // A tab that isn't on the bar any more (the wallet opened or closed) falls back to the first.
+    onTabKeysChanged: if (tabKeys.indexOf(currentTab) < 0) currentTab = tabKeys[0]
+    onCurrentTabChanged: if (currentTab === "explorer") explorerLoader.active = true
+
+    // The Explorer, at a page: it loads on its first visit.
     function showInExplorer(open) {
-        appTabs.currentIndex = 1
+        root.currentTab = "explorer"
         explorerLoader.active = true
         Qt.callLater(function () { if (explorerLoader.item) open(explorerLoader.item) })
     }
 
     // The frame belongs to the app, not to the way in: the welcome, unlock and setup screens
     // stay full screen (their card offers the Explorer instead).
-    readonly property bool frameShown: d.isWalletOpen || appTabs.currentIndex === 1
+    readonly property bool frameShown: d.isWalletOpen || currentTab === "explorer"
 
     ColumnLayout {
         id: frameHeader
@@ -254,43 +266,56 @@ Rectangle {
             Layout.fillWidth: true
             spacing: Theme.spacing.medium
 
-            LogosText {
-                objectName: "lezAppTitle"
-                text: qsTr("LEZ")
-                color: Theme.palette.text
-                font.pixelSize: Theme.typography.titleText
-                font.weight: Theme.typography.weightBold
+            // Title row as in the other wallet apps: the name and its help, a line under it.
+            ColumnLayout {
+                spacing: 2
+                RowLayout {
+                    spacing: Theme.spacing.small
+                    LogosText {
+                        objectName: "lezAppTitle"
+                        text: qsTr("LEZ")
+                        color: Theme.palette.text
+                        font.pixelSize: 28
+                        font.weight: Theme.typography.weightBold
+                    }
+                    LogosInfoButton {
+                        objectName: "lezAppHelp"
+                        title: qsTr("LEZ")
+                        Accessible.name: qsTr("Help: LEZ")
+                        text: qsTr("Your wallet on the Logos Execution Zone and an explorer for it. "
+                                   + "Public accounts are visible on chain; private ones are known only "
+                                   + "to you, and transfers between them are proved on this computer. "
+                                   + "The Explorer needs no wallet: it reads the chain from your node.")
+                    }
+                }
+                LogosText {
+                    objectName: "lezAppSubtitle"
+                    text: qsTr("Your LEZ accounts, transfers and the chain.")
+                    color: Theme.palette.textSecondary
+                    font.pixelSize: Theme.typography.secondaryText
+                }
             }
 
             Item { Layout.fillWidth: true }
 
-            // Name and sync state of the open wallet's network; its host in the tooltip.
-            Rectangle {
+            // The network chip, as in the other wallet apps: the network and its sync state, in
+            // the state's colour (a test network is orange when all is well); details on hover,
+            // Settings on a click.
+            LogosBadge {
                 id: networkChip
-                objectName: "lezNetworkChip"
+                objectName: "networkChip"
                 readonly property string name: root.networkNameOf(root.backend ? root.backend.sequencerAddr : "")
                 readonly property bool problem: root.backend !== null && root.backend.syncProblem.length > 0
                 readonly property bool syncing: root.backend !== null && root.backend.currentBlockHeight > 0
                                                 && root.backend.lastSyncedBlock < root.backend.currentBlockHeight
+                Layout.alignment: Qt.AlignVCenter
                 visible: d.isWalletOpen && name.length > 0
-                implicitHeight: 28
-                implicitWidth: chipText.implicitWidth + 2 * Theme.spacing.medium
-                radius: height / 2
-                color: "transparent"
-                border.width: 1
-                border.color: problem ? Theme.palette.warning : syncing ? Theme.palette.textSecondary
-                                                                        : Theme.palette.success
-                LogosText {
-                    id: chipText
-                    anchors.centerIn: parent
-                    text: networkChip.name + " · " + (networkChip.problem ? qsTr("Not syncing")
-                                                      : networkChip.syncing ? qsTr("Syncing")
-                                                      : qsTr("Synced"))
-                    font.pixelSize: Theme.typography.secondaryText
-                    color: networkChip.border.color
-                }
-                HoverHandler { id: chipHover }
-                ToolTip.visible: chipHover.hovered
+                text: name + " · " + (problem ? qsTr("Not syncing") : syncing ? qsTr("Syncing") : qsTr("Synced"))
+                color: problem ? Theme.palette.error : syncing ? Theme.palette.warning : Theme.palette.accentOrange
+                HoverHandler { id: networkChipHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.currentTab = "settings" }
+                ToolTip.visible: networkChipHover.hovered
+                ToolTip.delay: 400
                 ToolTip.text: (root.backend ? root.backend.sequencerAddr : "")
                               + (root.backend && root.backend.syncProblem.length ? "\n" + root.backend.syncProblem : "")
             }
@@ -300,10 +325,16 @@ Rectangle {
             id: appTabs
             objectName: "lezAppTabs"
             Layout.fillWidth: true
-            currentIndex: 0
-            LogosTabButton { objectName: "lezWalletTab"; text: qsTr("Wallet") }
-            LogosTabButton { objectName: "lezExplorerTab"; text: qsTr("Explorer") }
-            onCurrentIndexChanged: if (currentIndex === 1) explorerLoader.active = true
+            currentIndex: Math.max(0, root.tabKeys.indexOf(root.currentTab))
+            Repeater {
+                model: root.tabKeys
+                LogosTabButton {
+                    required property string modelData
+                    objectName: "lezTab_" + modelData
+                    text: root.tabTitles[modelData]
+                    onClicked: root.currentTab = modelData
+                }
+            }
         }
     }
 
@@ -315,7 +346,7 @@ Rectangle {
         anchors.right: parent.right
         anchors.top: frameHeader.bottom
         anchors.bottom: parent.bottom
-        visible: appTabs.currentIndex === 1
+        visible: root.currentTab === "explorer"
         active: false
         sourceComponent: ExplorerView { walletBackend: root.backend }
     }
@@ -327,7 +358,7 @@ Rectangle {
         anchors.top: root.frameShown ? frameHeader.bottom : parent.top
         anchors.topMargin: root.frameShown ? Theme.spacing.small : 0
         anchors.bottom: parent.bottom
-        visible: appTabs.currentIndex === 0
+        visible: root.currentTab !== "explorer"
 
         Component {
             id: loadingView
@@ -430,8 +461,12 @@ Rectangle {
 
         Component {
             id: mainView
-            DashboardView {
+            AppView {
                 id: dashboardView
+                page: root.currentTab
+                walletBackend: root.backend
+                networkName: root.networkNameOf(backend ? backend.sequencerAddr : "")
+                storagePath: backend ? backend.storagePath : ""
                 accountModel: root.accountModel
                 publicAccountModel: root.publicAccountModel
                 privateAccountModel: root.privateAccountModel

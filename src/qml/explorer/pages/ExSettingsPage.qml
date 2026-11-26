@@ -230,8 +230,11 @@ Item {
     function populateFrom(json) {
         var obj = {};
         try { obj = JSON.parse(json); } catch (e) { obj = {}; }
-        addrField.text = (obj.bedrock_config && obj.bedrock_config.addr) ? obj.bedrock_config.addr : "";
-        channelField.text = obj.channel_id || "";
+        // The sequencer's config (since lez-explorer-ui#35): bedrock_config.node_url and
+        // bedrock_config.channel_id. The old indexer's addr / top-level channel_id still read.
+        var bc = obj.bedrock_config || {};
+        addrField.text = bc.node_url || bc.addr || "";
+        channelField.text = bc.channel_id || obj.channel_id || "";
         intervalField.text = obj.consensus_info_polling_interval || "1s";
         chainResetToggle.checked = obj.allow_chain_reset === true;
     }
@@ -320,8 +323,10 @@ Item {
 
         if (typeof obj.bedrock_config !== "object" || obj.bedrock_config === null || Array.isArray(obj.bedrock_config))
             obj.bedrock_config = {};
-        obj.bedrock_config.addr = addrField.text.trim();
-        obj.channel_id = channelField.text.trim().toLowerCase();
+        obj.bedrock_config.node_url = addrField.text.trim();
+        obj.bedrock_config.channel_id = channelField.text.trim().toLowerCase();
+        delete obj.bedrock_config.addr;
+        delete obj.channel_id;
         obj.allow_chain_reset = chainResetToggle.checked;
         obj.consensus_info_polling_interval = intervalField.text.trim();
 

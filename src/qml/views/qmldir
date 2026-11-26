@@ -11,3 +11,8 @@ RecoveryPhrasePage 1.0 RecoveryPhrasePage.qml
 DashboardView 1.0 DashboardView.qml
 AccountsPanel 1.0 AccountsPanel.qml
 TransferPanel 1.0 TransferPanel.qml
+AppView 1.0 AppView.qml
+PageColumn 1.0 PageColumn.qml
+TransferResult 1.0 TransferResult.qml
+ActivityView 1.0 ActivityView.qml
+SettingsView 1.0 SettingsView.qml
