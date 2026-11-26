@@ -231,10 +231,10 @@ Rectangle {
     property string currentTab: "wallet"
     signal tabReselected(string key)
     readonly property var tabKeys: d.isWalletOpen
-        ? ["balance", "send", "bridge", "activity", "explorer", "settings"]
+        ? ["balance", "send", "bridge", "explorer", "settings"]
         : ["wallet", "explorer"]
     readonly property var tabTitles: ({ balance: qsTr("Accounts"), send: qsTr("Send"), bridge: qsTr("Bridge"),
-                                        activity: qsTr("Activity"), explorer: qsTr("Explorer"),
+                                        explorer: qsTr("Explorer"),
                                         settings: qsTr("Settings"), wallet: qsTr("Wallet") })
     // A tab that isn't on the bar any more (the wallet opened or closed) falls back to the first.
     onTabKeysChanged: if (tabKeys.indexOf(currentTab) < 0) currentTab = tabKeys[0]

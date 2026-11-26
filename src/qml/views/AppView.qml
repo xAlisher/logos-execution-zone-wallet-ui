@@ -5,13 +5,13 @@ import QtQuick.Layouts
 import Logos.Theme
 import Logos.Controls
 
-// The unlocked LEZ app's wallet pages, one per tab: Balance, Send, Bridge, Activity, Settings
+// The unlocked LEZ app's wallet pages, one per tab: Accounts, Send, Bridge, Settings
 // (Explorer is the frame's own). Each is a 560 column, as in the other wallet apps. Same
 // inputs and outputs as the old two-pane DashboardView, so the parent's wiring is unchanged.
 Item {
     id: root
 
-    // "balance", "send", "bridge", "activity" or "settings".
+    // "balance", "send", "bridge" or "settings".
     property string page: "balance"
 
     // --- inputs ---
@@ -55,7 +55,7 @@ Item {
 
     StackLayout {
         anchors.fill: parent
-        currentIndex: ["balance", "send", "bridge", "activity", "settings"].indexOf(root.page)
+        currentIndex: ["balance", "send", "bridge", "settings"].indexOf(root.page)
 
         // ---- Accounts ----
         // Not a PageColumn: the list and the account page scroll, and their bars belong at the
@@ -155,18 +155,6 @@ Item {
                     transferPending: root.transferPending
                     onViewInExplorerRequested: (h) => root.viewTxInExplorerRequested(h)
                 }
-            }
-        }
-
-        // ---- Activity ----
-        PageColumn {
-            objectName: "lezPageActivity"
-            ActivityView {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                walletBackend: root.walletBackend
-                publicAccountModel: root.publicAccountModel
-                onOpenTxRequested: (h) => root.viewTxInExplorerRequested(h)
             }
         }
 

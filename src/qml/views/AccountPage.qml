@@ -324,25 +324,6 @@ Item {
                     font.pixelSize: Theme.typography.secondaryText
                 }
             }
-
-            Panel {
-                objectName: "lezAccountPageActivityPanel"
-                title: qsTr("Activity")
-                description: root.isPublic ? ""
-                             : qsTr("A private account's activity isn't on chain in the clear, and "
-                                    + "the wallet keeps no history of it yet.")
-
-                ActivityView {
-                    objectName: "lezAccountPageActivity"
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 280
-                    visible: root.isPublic
-                    walletBackend: root.walletBackend
-                    fixedAccount: root.isPublic ? root.address : ""
-                    limit: 10
-                    onOpenTxRequested: (h) => root.openTxRequested(h)
-                }
-            }
         }
     }
 }
