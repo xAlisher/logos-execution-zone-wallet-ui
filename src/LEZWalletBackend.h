@@ -96,6 +96,8 @@ private:
     // Re-reads heights and balances while a wallet is open, so the Balance tab and the network
     // badge keep up without a Refresh button (incoming deposits, transfers to us).
     QTimer* m_pollTimer = nullptr;
+    class QNetworkAccessManager* m_net = nullptr;
+    void fetchChannelId();
     quint64 m_syncTarget = 0;
     static constexpr quint64 SYNC_CHUNK_SIZE = 100;
 

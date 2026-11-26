@@ -18,6 +18,9 @@ class LEZWalletBackend
     PROP(QString devnetUrl READONLY)
     // Why the wallet isn't keeping up with the chain, in words; "" when it is.
     PROP(QString syncProblem READONLY)
+    // The LEZ channel on the Logos Blockchain this wallet's sequencer posts to (hex), as its
+    // getChannelId answers; empty until known. Deposits into LEZ name this channel.
+    PROP(QString channelId READONLY)
 
     SLOT(QString createAccountPublic())
     SLOT(QString createAccountPrivate())

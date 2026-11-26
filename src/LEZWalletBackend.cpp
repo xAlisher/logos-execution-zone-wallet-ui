@@ -15,6 +15,10 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QTimer>
+#include <QRegularExpression>
+#include <QNetworkRequest>
+#include <QNetworkReply>
+#include <QNetworkAccessManager>
 #include <QUrl>
 
 #include "logos_api.h"
@@ -401,8 +405,39 @@ void LEZWalletBackend::fetchAndUpdateBlockHeights()
 void LEZWalletBackend::refreshSequencerAddr()
 {
     const QString addr = m_logos->lez_core.get_sequencer_addr();
-    if (sequencerAddr() != addr)
+    if (sequencerAddr() != addr) {
         setSequencerAddr(addr);
+        setChannelId(QString());
+    }
+    if (!addr.isEmpty() && channelId().isEmpty())
+        fetchChannelId();
+}
+
+// The channel a deposit has to name: asked of the sequencer itself (getChannelId), since
+// lez_core has no call for it and each network (testnet, devnet, a local one) has its own.
+void LEZWalletBackend::fetchChannelId()
+{
+    const QUrl url(sequencerAddr());
+    if (!url.isValid() || url.scheme().isEmpty())
+        return;
+    if (!m_net)
+        m_net = new QNetworkAccessManager(this);
+    QNetworkRequest req(url);
+    req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    req.setTransferTimeout(8000);
+    QNetworkReply* reply = m_net->post(
+        req, QByteArrayLiteral(R"({"jsonrpc":"2.0","id":1,"method":"getChannelId","params":[]})"));
+    const QString askedOf = sequencerAddr();
+    connect(reply, &QNetworkReply::finished, this, [this, reply, askedOf]() {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError || sequencerAddr() != askedOf)
+            return;
+        const QString id = QJsonDocument::fromJson(reply->readAll()).object()
+                               .value(QStringLiteral("result")).toString();
+        static const QRegularExpression hex64(QStringLiteral("^[0-9a-fA-F]{64}$"));
+        if (hex64.match(id).hasMatch())
+            setChannelId(id.toLower());
+    });
 }
 
 QString LEZWalletBackend::createAccountPublic()

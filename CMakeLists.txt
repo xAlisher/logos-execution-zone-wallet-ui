@@ -25,6 +25,8 @@ logos_module(
         src/explorer/sync_status.h
     FIND_PACKAGES
         Qt6Gui
+        Qt6Network
     LINK_LIBRARIES
         Qt6::Gui
+        Qt6::Network
 )

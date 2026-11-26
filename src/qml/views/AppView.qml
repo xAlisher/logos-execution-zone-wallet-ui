@@ -122,34 +122,39 @@ Item {
         }
 
         // ---- Bridge ----
-        PageColumn {
+        // Not a PageColumn: the deposit steps run long, and the scroll bar belongs at the
+        // tab's edge, so the 560 column is centred inside a full-width scroll view.
+        LogosScrollView {
+            id: bridgeScroll
             objectName: "lezPageBridge"
-            LogosFrame {
-                objectName: "lezBridgeDepositNote"
-                Layout.fillWidth: true
-                contentItem: LogosText {
-                    wrapMode: Text.WordWrap
-                    text: qsTr("To bring tokens in, deposit from the Blockchain app (Channel "
-                               + "Deposit, with your public account as the recipient). They arrive "
-                               + "once the deposit is final. Below: withdraw to a Bedrock account.")
-                    color: Theme.palette.textSecondary
-                    font.pixelSize: Theme.typography.secondaryText
+            contentWidth: availableWidth
+            contentHeight: bridgeColumn.implicitHeight + 2 * Theme.spacing.large
+
+            ColumnLayout {
+                id: bridgeColumn
+                x: Math.round((bridgeScroll.availableWidth - width) / 2)
+                y: Theme.spacing.large
+                width: Math.min(560, bridgeScroll.availableWidth - 2 * Theme.spacing.xlarge)
+                spacing: Theme.spacing.medium
+
+                BridgePanel {
+                    Layout.fillWidth: true
+                    labelPixelSize: sendPanel.labelPixelSize
+                    walletBackend: root.walletBackend
+                    channelId: root.walletBackend ? root.walletBackend.channelId : ""
+                    networkName: root.networkName
+                    publicAccountModel: root.publicAccountModel
+                    transferPending: root.transferPending
+                    onBridgeWithdrawRequested: (fromId, pk, amount) => root.bridgeWithdrawRequested(fromId, pk, amount)
                 }
-            }
-            BridgePanel {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                publicAccountModel: root.publicAccountModel
-                transferPending: root.transferPending
-                onBridgeWithdrawRequested: (fromId, pk, amount) => root.bridgeWithdrawRequested(fromId, pk, amount)
-            }
-            TransferResult {
-                Layout.fillWidth: true
-                transferResult: root.transferResult
-                transferTxHash: root.transferTxHash
-                transferResultIsError: root.transferResultIsError
-                transferPending: root.transferPending
-                onViewInExplorerRequested: (h) => root.viewTxInExplorerRequested(h)
+                TransferResult {
+                    Layout.fillWidth: true
+                    transferResult: root.transferResult
+                    transferTxHash: root.transferTxHash
+                    transferResultIsError: root.transferResultIsError
+                    transferPending: root.transferPending
+                    onViewInExplorerRequested: (h) => root.viewTxInExplorerRequested(h)
+                }
             }
         }
 
