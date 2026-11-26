@@ -122,10 +122,16 @@ Item {
     LogosScrollView {
         id: scroll
         anchors.fill: parent
+        // The scroll view spans the tab, so its bar sits at the window's edge; the content is
+        // the 560 column, centred, as PageColumn lays out the other tabs.
         contentWidth: availableWidth
+        contentHeight: column.implicitHeight + 2 * Theme.spacing.large
 
         ColumnLayout {
-            width: scroll.availableWidth
+            id: column
+            x: Math.round((scroll.availableWidth - width) / 2)
+            y: Theme.spacing.large
+            width: Math.min(560, scroll.availableWidth - 2 * Theme.spacing.xlarge)
             spacing: Theme.spacing.xlarge
 
             LogosNotice {

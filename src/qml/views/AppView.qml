@@ -58,12 +58,13 @@ Item {
         currentIndex: ["balance", "send", "bridge", "activity", "settings"].indexOf(root.page)
 
         // ---- Accounts ----
-        PageColumn {
+        // Not a PageColumn: the list and the account page scroll, and their bars belong at the
+        // tab's edge, so each centres its own 560 column inside a full-width scroll view.
+        Item {
             objectName: "lezPageBalance"
             AccountsPanel {
                 id: accountsPanel
-                Layout.fillWidth: true
-                Layout.fillHeight: true
+                anchors.fill: parent
                 visible: root.openAccountId.length === 0
                 publicAccountModel: root.publicAccountModel
                 privateAccountModel: root.privateAccountModel
@@ -78,8 +79,7 @@ Item {
             }
             AccountPage {
                 objectName: "lezAccountPage"
-                Layout.fillWidth: true
-                Layout.fillHeight: true
+                anchors.fill: parent
                 visible: root.openAccountId.length > 0
                 row: root.openAccountId.length > 0 ? accountsPanel.rowFor(root.openAccountId) : null
                 walletBackend: root.walletBackend

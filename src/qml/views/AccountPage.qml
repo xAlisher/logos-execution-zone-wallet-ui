@@ -69,10 +69,16 @@ Item {
     LogosScrollView {
         id: scroll
         anchors.fill: parent
+        // The scroll view spans the tab, so its bar sits at the window's edge; the content is
+        // the 560 column, centred, as PageColumn lays out the other tabs.
         contentWidth: availableWidth
+        contentHeight: column.implicitHeight + 2 * Theme.spacing.large
 
         ColumnLayout {
-            width: scroll.availableWidth
+            id: column
+            x: Math.round((scroll.availableWidth - width) / 2)
+            y: Theme.spacing.large
+            width: Math.min(560, scroll.availableWidth - 2 * Theme.spacing.xlarge)
             spacing: Theme.spacing.medium
 
             // ‹ Accounts, the way back.
@@ -97,19 +103,19 @@ Item {
             // Name, kind, balance and Send, centred on the column.
             ColumnLayout {
                 Layout.fillWidth: true
-                Layout.preferredWidth: scroll.availableWidth
+                Layout.preferredWidth: column.width
                 spacing: 4
                 RowLayout {
                     // A layout inside a layout fills by default; this one is its content's width.
                     Layout.fillWidth: false
                     Layout.alignment: Qt.AlignHCenter
-                    Layout.maximumWidth: scroll.availableWidth
+                    Layout.maximumWidth: column.width
                     spacing: 8
                     LogosText {
                         objectName: "lezAccountPageName"
                         // Its own width, so the row stays as wide as its content and centres;
                         // a long name elides before it pushes the tag out.
-                        Layout.maximumWidth: Math.max(0, scroll.availableWidth - 120)
+                        Layout.maximumWidth: Math.max(0, column.width - 120)
                         text: root.row ? (root.row.name || ("Account " + Format.shortenHead(root.address))) : ""
                         textFormat: Text.PlainText
                         elide: Text.ElideRight
@@ -202,7 +208,9 @@ Item {
                     spacing: 6
                     LogosSelectableText {
                         objectName: "lezAccountPageAddress"
+                        // As wide as the address, so copy sits right after it; wraps when narrower.
                         Layout.fillWidth: true
+                        Layout.maximumWidth: Math.ceil(implicitWidth)
                         text: root.address
                         wrapMode: Text.WrapAnywhere
                         font.family: Theme.typography.mono
@@ -213,6 +221,7 @@ Item {
                         value: root.address
                         LogosToolTip { text: qsTr("Copy address"); visible: parent.hovered; delay: 400 }
                     }
+                    Item { Layout.fillWidth: true }
                 }
             }
 

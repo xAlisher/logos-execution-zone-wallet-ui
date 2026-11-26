@@ -229,6 +229,7 @@ Rectangle {
     }
     // ---- Tabs, by key. Unlocked: the app's six; on the way in: back to the wallet, or Explorer.
     property string currentTab: "wallet"
+    signal tabReselected(string key)
     readonly property var tabKeys: d.isWalletOpen
         ? ["balance", "send", "bridge", "activity", "explorer", "settings"]
         : ["wallet", "explorer"]
@@ -333,7 +334,12 @@ Rectangle {
                     required property string modelData
                     objectName: "lezTab_" + modelData
                     text: root.tabTitles[modelData]
-                    onClicked: root.currentTab = modelData
+                    // Clicking the tab you're on goes to its start (an account's page back to
+                    // the list), as a tab does in the other wallets.
+                    onClicked: {
+                        if (root.currentTab === modelData) root.tabReselected(modelData)
+                        root.currentTab = modelData
+                    }
                 }
             }
         }
@@ -474,6 +480,10 @@ Rectangle {
                 lastSyncedBlock: backend ? backend.lastSyncedBlock : 0
                 currentBlockHeight: backend ? backend.currentBlockHeight : 0
                 onTabRequested: (key) => root.currentTab = key
+                Connections {
+                    target: root
+                    function onTabReselected(key) { if (key === "balance") dashboardView.openAccountId = "" }
+                }
                 onViewTxInExplorerRequested: (txHash) => root.showInExplorer(function (ex) { ex.navigateTx(txHash) })
                 onViewAccountInExplorerRequested: (id) => root.showInExplorer(function (ex) { ex.navigateAccount(id) })
                 sequencerAddr: backend ? backend.sequencerAddr : ""
